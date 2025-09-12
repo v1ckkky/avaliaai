@@ -7,6 +7,7 @@ import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import Home from "./pages/Home";
 import EventRoom from "./pages/Event";
+import CreateEvent from "./pages/CreateEvent";
 
 export default function App() {
   const [session, setSession] = useState(null);
@@ -32,6 +33,7 @@ export default function App() {
         <Route path="/home" element={session ? <Home /> : <Navigate to="/login" />} />
         <Route path="/event/:id" element={session ? <EventRoom /> : <Navigate to="/login" />} />
         <Route path="*" element={<Navigate to="/" />} />
+        <Route path="/create-event" element={session ? <CreateEvent /> : <Navigate to="/login" />} />
       </Routes>
     </BrowserRouter>
   );

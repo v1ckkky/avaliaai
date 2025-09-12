@@ -44,12 +44,20 @@ export default function Home() {
     <div className="min-h-screen p-6">
       <header className="max-w-4xl mx-auto flex items-center justify-between">
         <h1 className="text-xl font-bold">Avalia Aí</h1>
+        <div className="flex gap-2">
         <button
           onClick={() => supabase.auth.signOut()}
           className="rounded-full px-3 py-2 bg-white/10 hover:bg-white/20"
         >
           Sair
         </button>
+        <button
+          onClick={() => nav("/create-event")}
+          className="rounded-full px-3 py-2 bg-white/10 hover:bg-white/20"
+        >
+          Novo Evento
+        </button>
+        </div>
       </header>
 
       <main className="max-w-4xl mx-auto mt-6 space-y-4">
