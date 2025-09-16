@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabaseClient";
 
@@ -19,7 +19,7 @@ export default function EventRoom() {
   const [votes, setVotes] = useState({ up: 0, down: 0 });
   const [avg, setAvg] = useState({ dj: 0, fila: 0, preco: 0, seguranca: 0 });
 
-  // ---- Carregar dados iniciais
+  // -------- loads
   async function loadEvent() {
     const { data } = await supabase.from("events").select("*").eq("id", id).single();
     setEv(data);
@@ -28,12 +28,13 @@ export default function EventRoom() {
   async function loadVotes() {
     const { data, error } = await supabase
       .from("votes")
-      .select("upvote", { count: "exact", head: false })
+      .select("upvote")
       .eq("event_id", id);
 
     if (error) return;
-    const up = data.filter(v => v.upvote === true).length;
-    const down = data.filter(v => v.upvote === false).length;
+    const list = data || [];
+    const up = list.filter(v => v.upvote === true).length;
+    const down = list.filter(v => v.upvote === false).length;
     setVotes({ up, down });
   }
 
@@ -44,10 +45,10 @@ export default function EventRoom() {
       .eq("event_id", id);
 
     if (error) return;
-    const keys = ["dj", "fila", "preco", "seguranca"];
     const acc = { dj: [], fila: [], preco: [], seguranca: [] };
-    data.forEach(r => acc[r.key]?.push(r.score));
-    const mean = k => (acc[k].length ? (acc[k].reduce((a, b) => a + b, 0) / acc[k].length) : 0);
+    (data || []).forEach(r => acc[r.key]?.push(Number(r.score)));
+    const mean = k =>
+      acc[k].length ? acc[k].reduce((a, b) => a + b, 0) / acc[k].length : 0;
     setAvg({
       dj: mean("dj"),
       fila: mean("fila"),
@@ -56,7 +57,7 @@ export default function EventRoom() {
     });
   }
 
-  // ---- Enviar ações
+  // -------- actions
   async function sendVote(up) {
     await supabase.from("votes").insert({ event_id: id, upvote: up });
   }
@@ -64,26 +65,30 @@ export default function EventRoom() {
     await supabase.from("ratings").insert({ event_id: id, key, score });
   }
 
-  // ---- Início
+  // -------- init
   useEffect(() => {
     loadEvent();
     loadVotes();
     loadRatings();
   }, [id]);
 
-  // ---- Realtime (escutar alterações nas tabelas)
+  // -------- realtime
   useEffect(() => {
     const channel = supabase
       .channel(`room-${id}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "votes", filter: `event_id=eq.${id}` }, () => {
-        loadVotes();
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "ratings", filter: `event_id=eq.${id}` }, () => {
-        loadRatings();
-      })
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "votes", filter: `event_id=eq.${id}` },
+        loadVotes
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "ratings", filter: `event_id=eq.${id}` },
+        loadRatings
+      )
       .subscribe();
 
-    return () => { supabase.removeChannel(channel); };
+    return () => supabase.removeChannel(channel);
   }, [id]);
 
   if (!ev) return <div className="p-6">Carregando…</div>;
@@ -97,7 +102,7 @@ export default function EventRoom() {
         ← Voltar
       </button>
 
-      <div className="rounded-2xl p-4 bg-white/5 space-y-2">
+      <div className="rounded-2xl p-4 bg-white/5 space-y-4">
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold">{ev.title}</h1>
@@ -111,38 +116,50 @@ export default function EventRoom() {
         </div>
 
         {/* Votos */}
-        <div className="mt-3 flex gap-2">
-          <button className="rounded-xl px-4 py-2 bg-white/10 hover:bg-white/20" onClick={() => sendVote(true)}>👍 Bom</button>
-          <button className="rounded-xl px-4 py-2 bg-white/10 hover:bg-white/20" onClick={() => sendVote(false)}>👎 Ruim</button>
+        <div className="mt-2 flex gap-2">
+          <button
+            className="rounded-xl px-4 py-2 bg-white/10 hover:bg-white/20"
+            onClick={() => sendVote(true)}
+          >
+            👍 Bom
+          </button>
+          <button
+            className="rounded-xl px-4 py-2 bg-white/10 hover:bg-white/20"
+            onClick={() => sendVote(false)}
+          >
+            👎 Ruim
+          </button>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-3">
+        {/* Contadores (sem "Saldo") */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
           <Stat label="👍" value={votes.up} />
           <Stat label="👎" value={votes.down} />
-          <Stat label="Saldo" value={votes.up - votes.down} />
           <Stat label="Total" value={votes.up + votes.down} />
         </div>
-      </div>
 
-      {/* Notas por critério */}
-      <div className="grid md:grid-cols-2 gap-3">
-        {["dj", "fila", "preco", "seguranca"].map(k => (
-          <div key={k} className="rounded-2xl p-4 bg-white/5">
-            <p className="font-semibold capitalize">{k}</p>
-            <p className="text-sm opacity-80">Média: {avg[k]?.toFixed?.(1) ?? "0.0"}</p>
-            <div className="flex gap-2 mt-2">
-              {[1,2,3,4,5].map(s => (
-                <button
-                  key={s}
-                  className="rounded-xl px-3 py-2 bg-white/10 hover:bg-white/20"
-                  onClick={() => sendRating(k, s)}
-                >
-                  {s}★
-                </button>
-              ))}
+        {/* Notas por critério */}
+        <div className="grid md:grid-cols-2 gap-3">
+          {["dj", "fila", "preco", "seguranca"].map((k) => (
+            <div key={k} className="rounded-2xl p-4 bg-white/5">
+              <p className="font-semibold capitalize">{k}</p>
+              <p className="text-sm opacity-80">
+                Média: {avg[k] ? avg[k].toFixed(1) : "0.0"}
+              </p>
+              <div className="flex gap-2 mt-2">
+                {[1, 2, 3, 4, 5].map((s) => (
+                  <button
+                    key={s}
+                    className="rounded-xl px-3 py-2 bg-white/10 hover:bg-white/20"
+                    onClick={() => sendRating(k, s)}
+                  >
+                    {s}★
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
-        ))}
+          ))}
+        </div>
       </div>
     </div>
   );
