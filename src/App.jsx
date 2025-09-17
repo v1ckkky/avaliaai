@@ -9,6 +9,7 @@ import Home from "./pages/Home";
 import EventRoom from "./pages/Event";
 import CreateEvent from "./pages/CreateEvent";
 import Settings from "./pages/Settings";
+import AdminRequests from "./pages/AdminRequests";
 
 export default function App() {
   const [session, setSession] = useState(null);
@@ -36,6 +37,7 @@ export default function App() {
         <Route path="*" element={<Navigate to="/" />} />
         <Route path="/create-event" element={session ? <CreateEvent /> : <Navigate to="/login" />} />
         <Route path="/settings" element={session ? <Settings /> : <Navigate to="/login" />} />
+        <Route path="/admin/requests" element={session ? <AdminRequests /> : <Navigate to="/login" />} />
       </Routes>
     </BrowserRouter>
   );

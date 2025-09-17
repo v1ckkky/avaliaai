@@ -135,7 +135,7 @@ export default function EventRoom() {
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
           <Stat label="👍" value={votes.up} />
           <Stat label="👎" value={votes.down} />
-          <Stat label="Total" value={votes.up + votes.down} />
+          <Stat label="Total de avaliações" value={votes.up + votes.down} />
         </div>
 
         {/* Notas por critério */}

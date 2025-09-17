@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabaseClient";
 import { useNavigate } from "react-router-dom";
 
+
 function EventCard({ ev, onOpen }) {
   return (
     <button
@@ -32,6 +33,8 @@ export default function Home() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState({ display_name: "", role: "user" });
+  const canCreate = profile.role === "owner" || profile.role === "admin";
+
 
   async function load() {
     setLoading(true);
@@ -64,26 +67,31 @@ export default function Home() {
     <div className="min-h-screen p-6">
       {/* HEADER */}
       <header className="max-w-4xl mx-auto flex items-center justify-between">
-  <h1 className="text-xl font-bold">Avalia Aí</h1>
+        <h1 className="text-xl font-bold">Avalia Aí</h1>
 
-  <div className="flex gap-2">
-    <button
-      onClick={() => nav("/create-event")}
-      className="rounded-full px-3 py-2 bg-white/10 hover:bg-white/20"
-    >
-      Novo Evento
-    </button>
+        <div className="flex gap-2">
+          {/* Mostra só para proprietários/admin */}
+          {canCreate && (
+            <button
+              onClick={() => nav("/create-event")}
+              className="rounded-full px-3 py-2 bg-white/10 hover:bg-white/20"
+            >
+              Novo Evento
+            </button>
+          )}
 
-    <button
-      onClick={() => setDrawerOpen(true)}
-      className="rounded-full px-3 py-2 bg-white/10 hover:bg-white/20 flex items-center gap-2"
-      title="Perfil"
-    >
-      <span>👤</span>
-      <span>Perfil</span>
-    </button>
-  </div>
-</header>
+          {/* Perfil sempre visível */}
+          <button
+            onClick={() => setDrawerOpen(true)}
+            className="rounded-full px-3 py-2 bg-white/10 hover:bg-white/20 flex items-center gap-2"
+            title="Perfil"
+          >
+            <span>👤</span>
+            <span>Perfil</span>
+          </button>
+        </div>
+      </header>
+
 
 
       {/* MAIN */}
@@ -156,18 +164,31 @@ export default function Home() {
                 }}
                 className="w-full text-left rounded-xl px-3 py-3 bg-white/10 hover:bg-white/20 flex items-center gap-2"
               >
-                 Configurações
+                Configurações
               </button>
 
-              <button
-                onClick={() => {
-                  setDrawerOpen(false);
-                  nav("/create-event");
-                }}
-                className="w-full text-left rounded-xl px-3 py-3 bg-white/10 hover:bg-white/20 flex items-center gap-2"
-              >
-                 Criar novo evento
-              </button>
+              {/* Mostra só se for owner/admin */}
+              {canCreate && (
+                <button
+                  onClick={() => {
+                    setDrawerOpen(false);
+                    nav("/create-event");
+                  }}
+                  className="w-full text-left rounded-xl px-3 py-3 bg-white/10 hover:bg-white/20 flex items-center gap-2"
+                >
+                  Criar novo evento
+                </button>
+              )}
+
+              {/* 👉 só admin vê este atalho */}
+              {profile.role === "admin" && (
+                <button
+                  onClick={() => { setDrawerOpen(false); nav("/admin/requests"); }}
+                  className="w-full text-left rounded-xl px-3 py-3 bg-white/10 hover:bg-white/20 flex items-center gap-2"
+                >
+                  🛡️ Área do Admin
+                </button>
+              )}
 
               <button
                 onClick={() => {
@@ -176,9 +197,10 @@ export default function Home() {
                 }}
                 className="w-full text-left rounded-xl px-3 py-3 bg-white/10 hover:bg-white/20 flex items-center gap-2"
               >
-                 Sair
+                Sair
               </button>
             </div>
+
           </aside>
         </>
       )}
