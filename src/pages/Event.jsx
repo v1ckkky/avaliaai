@@ -19,6 +19,13 @@ export default function EventRoom() {
   const [votes, setVotes] = useState({ up: 0, down: 0 });
   const [avg, setAvg] = useState({ dj: 0, fila: 0, preco: 0, seguranca: 0 });
 
+  // para controle do botão Excluir
+  const [userId, setUserId] = useState(null);
+  const [role, setRole] = useState("user"); // 'user' | 'owner' | 'admin'
+  const canDelete = !!ev && (userId === ev?.created_by || role === "admin");
+  const canEdit = canDelete;
+
+
   // -------- loads
   async function loadEvent() {
     const { data } = await supabase.from("events").select("*").eq("id", id).single();
@@ -33,8 +40,8 @@ export default function EventRoom() {
 
     if (error) return;
     const list = data || [];
-    const up = list.filter(v => v.upvote === true).length;
-    const down = list.filter(v => v.upvote === false).length;
+    const up = list.filter((v) => v.upvote === true).length;
+    const down = list.filter((v) => v.upvote === false).length;
     setVotes({ up, down });
   }
 
@@ -46,8 +53,8 @@ export default function EventRoom() {
 
     if (error) return;
     const acc = { dj: [], fila: [], preco: [], seguranca: [] };
-    (data || []).forEach(r => acc[r.key]?.push(Number(r.score)));
-    const mean = k =>
+    (data || []).forEach((r) => acc[r.key]?.push(Number(r.score)));
+    const mean = (k) =>
       acc[k].length ? acc[k].reduce((a, b) => a + b, 0) / acc[k].length : 0;
     setAvg({
       dj: mean("dj"),
@@ -65,11 +72,36 @@ export default function EventRoom() {
     await supabase.from("ratings").insert({ event_id: id, key, score });
   }
 
+  async function deleteEvent() {
+    if (!confirm("Tem certeza que deseja excluir este evento?")) return;
+    const { error } = await supabase.from("events").delete().eq("id", id);
+    if (error) {
+      alert(error.message);
+      return;
+    }
+    nav("/home");
+  }
+
   // -------- init
   useEffect(() => {
-    loadEvent();
-    loadVotes();
-    loadRatings();
+    (async () => {
+      const { data: u } = await supabase.auth.getUser();
+      const uid = u?.user?.id || null;
+      setUserId(uid);
+
+      if (uid) {
+        const { data: prof } = await supabase
+          .from("profiles")
+          .select("role")
+          .eq("id", uid)
+          .maybeSingle();
+        if (prof?.role) setRole(prof.role);
+      }
+
+      loadEvent();
+      loadVotes();
+      loadRatings();
+    })();
   }, [id]);
 
   // -------- realtime
@@ -95,14 +127,38 @@ export default function EventRoom() {
 
   return (
     <div className="min-h-screen p-6 max-w-4xl mx-auto space-y-4">
+      {/* Top bar: voltar + excluir (condicional) */}
+      <div className="flex items-center justify-between">
+        <button
+          onClick={() => nav(-1)}
+          className="rounded-full px-3 py-2 bg-white/10 hover:bg-white/20"
+        >
+          ← Voltar
+        </button>
+
+    <div className="flex gap-2">
+        {canEdit && (
       <button
-        onClick={() => nav(-1)}
+        onClick={() => nav(`/event/${id}/edit`)}
         className="rounded-full px-3 py-2 bg-white/10 hover:bg-white/20"
       >
-        ← Voltar
+        Editar
       </button>
+    )}
+        {canDelete && (
+          <button
+            onClick={deleteEvent}
+            className="rounded-full px-3 py-2 bg-red-700/70 hover:bg-red-700"
+            title="Excluir evento"
+          >
+            Excluir evento
+          </button>
+        )}
+        </div>
+      </div>
 
       <div className="rounded-2xl p-4 bg-white/5 space-y-4">
+        {/* Header do evento */}
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold">{ev.title}</h1>
@@ -114,6 +170,15 @@ export default function EventRoom() {
             </span>
           )}
         </div>
+
+        {/* Capa do evento (abaixo do header) */}
+        {ev.image_url && (
+          <img
+            src={ev.image_url}
+            alt="Capa do evento"
+            className="w-full h-56 object-cover rounded-2xl"
+          />
+        )}
 
         {/* Votos */}
         <div className="mt-2 flex gap-2">
@@ -131,7 +196,7 @@ export default function EventRoom() {
           </button>
         </div>
 
-        {/* Contadores (sem "Saldo") */}
+        {/* Contadores */}
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
           <Stat label="👍" value={votes.up} />
           <Stat label="👎" value={votes.down} />
@@ -139,6 +204,9 @@ export default function EventRoom() {
         </div>
 
         {/* Notas por critério */}
+        <div className="space-y-3">
+          <p className="font-semibold text-lg">Avalie conforme sua satisfação: </p>
+        
         <div className="grid md:grid-cols-2 gap-3">
           {["dj", "fila", "preco", "seguranca"].map((k) => (
             <div key={k} className="rounded-2xl p-4 bg-white/5">
@@ -160,6 +228,7 @@ export default function EventRoom() {
             </div>
           ))}
         </div>
+      </div>
       </div>
     </div>
   );

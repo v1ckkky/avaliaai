@@ -7,12 +7,16 @@ function EventCard({ ev, onOpen }) {
   return (
     <button
       onClick={() => onOpen(ev)}
-      className="w-full text-left rounded-2xl p-4 bg-white/5 hover:bg-white/10 transition"
+      className="w-full text-left rounded-2xl overflow-hidden bg-white/5 hover:bg-white/10 transition"
     >
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="font-semibold">{ev.title}</p>
-          <p className="text-sm opacity-80">{ev.venue || "Sem local"}</p>
+      {ev.image_url && (
+        <img src={ev.image_url} alt="" className="w-full h-36 object-cover" />
+      )}
+
+      <div className="p-4 flex items-center justify-between">
+        <div className="min-w-0">
+          <p className="font-semibold truncate">{ev.title}</p>
+          <p className="text-sm opacity-80 truncate">{ev.venue || "Sem local"}</p>
         </div>
         {ev.is_live && (
           <span className="text-xs px-2 py-1 rounded-full bg-red-700/30 text-red-300">
@@ -23,6 +27,7 @@ function EventCard({ ev, onOpen }) {
     </button>
   );
 }
+
 
 export default function Home() {
   const nav = useNavigate();
