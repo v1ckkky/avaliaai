@@ -2,18 +2,44 @@ import { useRef, useState } from "react";
 import { supabase } from "../lib/supabaseClient";
 import { useNavigate } from "react-router-dom";
 
+const WEEK_LABELS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+
 export default function CreateEvent() {
   const nav = useNavigate();
 
+  // básicos
   const [title, setTitle] = useState("");
   const [venue, setVenue] = useState("");
-  const [startsAt, setStartsAt] = useState("");
+
+  // modo: único ou recorrente
+  const [recurring, setRecurring] = useState(true);
+
+  // único
+  const [singleStart, setSingleStart] = useState(""); // datetime-local
+  const [singleEnd, setSingleEnd] = useState("");     // datetime-local
+
+  // recorrente
+  const [days, setDays] = useState([]);               // smallint[] 0..6
+  const [recurStart, setRecurStart] = useState("");   // time
+  const [recurEnd, setRecurEnd] = useState("");       // time
+  const [activeFrom, setActiveFrom] = useState("");   // date
+  const [activeUntil, setActiveUntil] = useState(""); // date
+
+  // imagem
   const [imageFile, setImageFile] = useState(null);
   const [preview, setPreview] = useState("");
+
+  // estado
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
 
   const fileInputRef = useRef(null);
+
+  function toggleDay(idx) {
+    setDays((prev) =>
+      prev.includes(idx) ? prev.filter((d) => d !== idx) : [...prev, idx].sort()
+    );
+  }
 
   function handlePickFile(e) {
     const f = e.target.files?.[0] || null;
@@ -25,34 +51,61 @@ export default function CreateEvent() {
     e.preventDefault();
     setErr("");
     setSaving(true);
-    try {
-      // garante que o usuário está logado para criar evento
-      const { data: u } = await supabase.auth.getUser();
-      console.log("UID:", u?.user?.id);
-      if (!u?.user?.id) throw new Error("Faça login para criar eventos.");
 
-      // 1) cria evento
+    try {
+      const { data: u } = await supabase.auth.getUser();
+      const uid = u?.user?.id;
+      if (!uid) throw new Error("Faça login para criar eventos.");
+
+      // monta payload
+      let payload = {
+        title,
+        venue,
+        created_by: uid,
+      };
+
+      if (recurring) {
+        if (days.length === 0) throw new Error("Selecione ao menos um dia da semana.");
+        if (!recurStart || !recurEnd) throw new Error("Defina hora de início e de término.");
+
+        payload = {
+          ...payload,
+          recurring: true,
+          starts_at: null,
+          ends_at: null,
+          recur_days: days,
+          recur_start: recurStart,
+          recur_end: recurEnd,
+          active_from: activeFrom || null,
+          active_until: activeUntil || null,
+        };
+      } else {
+        if (!singleStart) throw new Error("Defina o início do evento.");
+        payload = {
+          ...payload,
+          recurring: false,
+          starts_at: new Date(singleStart).toISOString(),
+          ends_at: singleEnd ? new Date(singleEnd).toISOString() : null,
+          recur_days: null,
+          recur_start: null,
+          recur_end: null,
+          active_from: null,
+          active_until: null,
+        };
+      }
+
+      // cria evento
       const { data: ev, error: insertErr } = await supabase
         .from("events")
-        .insert({
-          title,
-          venue,
-          starts_at: startsAt ? new Date(startsAt).toISOString() : new Date().toISOString(),
-          created_by: u?.user?.id,
-          is_live: true,
-        })
+        .insert(payload)
         .select("*")
         .single();
       if (insertErr) throw insertErr;
 
-      // 2) se o usuário escolheu imagem, faz upload
+      // upload de imagem (opcional)
       if (imageFile) {
-        if (!imageFile.type.startsWith("image/")) {
-          throw new Error("Selecione um arquivo de imagem.");
-        }
-        if (imageFile.size > 3 * 1024 * 1024) {
-          throw new Error("Imagem muito grande. Máx: 3MB.");
-        }
+        if (!imageFile.type.startsWith("image/")) throw new Error("Selecione um arquivo de imagem.");
+        if (imageFile.size > 3 * 1024 * 1024) throw new Error("Imagem muito grande. Máx: 3MB.");
 
         const ext = imageFile.name.split(".").pop() || "jpg";
         const filename = `${crypto.randomUUID()}.${ext}`;
@@ -63,11 +116,9 @@ export default function CreateEvent() {
           .upload(path, imageFile, { cacheControl: "3600", upsert: false });
         if (upErr) throw new Error(`Falha no upload da imagem: ${upErr.message}`);
 
-        // 3) URL pública (bucket público)
         const { data: pub } = supabase.storage.from("event-photos").getPublicUrl(path);
         const image_url = pub.publicUrl;
 
-        // 4) grava a URL no evento
         const { error: updErr } = await supabase
           .from("events")
           .update({ image_url })
@@ -75,6 +126,7 @@ export default function CreateEvent() {
         if (updErr) throw new Error(`Falha ao salvar capa no evento: ${updErr.message}`);
       }
 
+      // redireciona (pode ser /home ou /event/:id)
       nav(`/event/${ev.id}`);
 
     } catch (e) {
@@ -109,40 +161,122 @@ export default function CreateEvent() {
           onChange={(e) => setVenue(e.target.value)}
         />
 
-        <div className="grid sm:grid-cols-2 gap-3">
-          <div className="space-y-1">
-            <label className="text-sm opacity-80">Início</label>
-            <input
-              type="datetime-local"
-              className="w-full rounded-xl px-3 py-2 bg-white/10"
-              value={startsAt}
-              onChange={(e) => setStartsAt(e.target.value)}
-            />
-          </div>
+        {/* seletor de modo */}
+        <label className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            checked={recurring}
+            onChange={(e) => setRecurring(e.target.checked)}
+          />
+          <span>Evento recorrente (semanal)</span>
+        </label>
 
-          <div className="space-y-2">
-            <label className="text-sm opacity-80">Foto de capa (opcional)</label>
-            {/* Botão estilizado que abre o input file oculto */}
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                className="rounded-xl px-3 py-2 bg-white/10 hover:bg-white/20"
-              >
-                Adicionar imagem
-              </button>
-              <span className="text-sm opacity-70 truncate">
-                {imageFile ? imageFile.name : "Nenhum arquivo selecionado"}
-              </span>
+        {recurring ? (
+          <div className="rounded-2xl p-4 bg-white/5 space-y-3">
+            <div className="flex flex-wrap gap-2">
+              {WEEK_LABELS.map((lbl, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => toggleDay(i)}
+                  className={`px-3 py-2 rounded-xl ${
+                    days.includes(i) ? "bg-white/20" : "bg-white/10 hover:bg-white/15"
+                  }`}
+                >
+                  {lbl}
+                </button>
+              ))}
             </div>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              onChange={handlePickFile}
-              className="hidden"
-            />
+
+            <div className="grid sm:grid-cols-2 gap-3">
+              <div>
+                <label className="text-sm opacity-80">Hora de início</label>
+                <input
+                  type="time"
+                  className="w-full rounded-xl px-3 py-2 bg-white/10"
+                  value={recurStart}
+                  onChange={(e) => setRecurStart(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="text-sm opacity-80">Hora de término</label>
+                <input
+                  type="time"
+                  className="w-full rounded-xl px-3 py-2 bg-white/10"
+                  value={recurEnd}
+                  onChange={(e) => setRecurEnd(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="grid sm:grid-cols-2 gap-3">
+              <div>
+                <label className="text-sm opacity-80">Ativo a partir de</label>
+                <input
+                  type="date"
+                  className="w-full rounded-xl px-3 py-2 bg-white/10"
+                  value={activeFrom}
+                  onChange={(e) => setActiveFrom(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="text-sm opacity-80">Ativo até</label>
+                <input
+                  type="date"
+                  className="w-full rounded-xl px-3 py-2 bg-white/10"
+                  value={activeUntil}
+                  onChange={(e) => setActiveUntil(e.target.value)}
+                />
+              </div>
+            </div>
           </div>
+        ) : (
+          <div className="rounded-2xl p-4 bg-white/5 space-y-3">
+            <div className="grid sm:grid-cols-2 gap-3">
+              <div>
+                <label className="text-sm opacity-80">Início</label>
+                <input
+                  type="datetime-local"
+                  className="w-full rounded-xl px-3 py-2 bg-white/10"
+                  value={singleStart}
+                  onChange={(e) => setSingleStart(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="text-sm opacity-80">Fim (opcional)</label>
+                <input
+                  type="datetime-local"
+                  className="w-full rounded-xl px-3 py-2 bg-white/10"
+                  value={singleEnd}
+                  onChange={(e) => setSingleEnd(e.target.value)}
+                />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Imagem */}
+        <div className="space-y-2">
+          <label className="text-sm opacity-80">Foto de capa (opcional)</label>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="rounded-xl px-3 py-2 bg-white/10 hover:bg-white/20"
+            >
+              Adicionar imagem
+            </button>
+            <span className="text-sm opacity-70 truncate">
+              {imageFile ? imageFile.name : "Nenhum arquivo selecionado"}
+            </span>
+          </div>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            onChange={handlePickFile}
+            className="hidden"
+          />
         </div>
 
         {preview && (

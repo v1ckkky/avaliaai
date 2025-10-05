@@ -4,9 +4,10 @@ import { supabase } from "./lib/supabaseClient";
 
 import Start from "./pages/Start";
 import Login from "./pages/Login";
+import ResetPassword from "./pages/ResetPassword";
 import Signup from "./pages/Signup";
 import Home from "./pages/Home";
-import EventRoom from "./pages/Event";
+import Occurrence from "./pages/Occurrence"; // <== importante
 import CreateEvent from "./pages/CreateEvent";
 import Settings from "./pages/Settings";
 import AdminRequests from "./pages/AdminRequests";
@@ -29,25 +30,27 @@ export default function App() {
 
   return (
     <BrowserRouter>
-  <Routes>
-    <Route path="/" element={<Start />} />
-    <Route path="/login" element={session ? <Navigate to="/home" /> : <Login />} />
-    <Route path="/signup" element={session ? <Navigate to="/home" /> : <Signup />} />
+      <Routes>
+        {/* Rotas públicas */}
+        <Route path="/" element={<Start />} />
+        <Route path="/login" element={session ? <Navigate to="/home" /> : <Login />} />
+        <Route path="/signup" element={session ? <Navigate to="/home" /> : <Signup />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
 
-    <Route path="/home" element={session ? <Home /> : <Navigate to="/login" />} />
-    <Route path="/create-event" element={session ? <CreateEvent /> : <Navigate to="/login" />} />
-    <Route path="/settings" element={session ? <Settings /> : <Navigate to="/login" />} />
-    <Route path="/admin/requests" element={session ? <AdminRequests /> : <Navigate to="/login" />} />
+        {/* 🔓 As ocorrências agora são públicas */}
+        <Route path="/occ/:id" element={<Occurrence />} />
+        <Route path="/event/:id" element={<Occurrence />} />
 
-    <Route path="/event/:id" element={session ? <EventRoom /> : <Navigate to="/login" />} />
-    <Route path="/event/:id/edit" element={session ? <EditEvent /> : <Navigate to="/login" />} />
+        {/* Rotas protegidas (somente logadas) */}
+        <Route path="/home" element={session ? <Home /> : <Navigate to="/login" />} />
+        <Route path="/create-event" element={session ? <CreateEvent /> : <Navigate to="/login" />} />
+        <Route path="/settings" element={session ? <Settings /> : <Navigate to="/login" />} />
+        <Route path="/admin/requests" element={session ? <AdminRequests /> : <Navigate to="/login" />} />
+        <Route path="/event/:id/edit" element={session ? <EditEvent /> : <Navigate to="/login" />} />
 
-    {/* sempre por último */}
-    <Route path="*" element={<Navigate to="/" />} />
-  </Routes>
-</BrowserRouter>
+        {/* Fallback */}
+        <Route path="*" element={<Navigate to="/" />} />
+      </Routes>
+    </BrowserRouter>
   );
 }
-
-
-

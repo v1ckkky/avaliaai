@@ -10,6 +10,8 @@ export default function Login() {
   const [pass, setPass] = useState("");
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
+  const [forgotMsg, setForgotMsg] = useState("");
+  const [sending, setSending] = useState(false);
 
   async function onSubmit(e) {
     e.preventDefault();
@@ -22,6 +24,31 @@ export default function Login() {
     setLoading(false);
     if (error) setErr(error.message);
     else nav("/home");
+  }
+
+  async function handleForgotPassword(e) {
+    e.preventDefault();
+    setForgotMsg("");
+    setErr("");
+
+    if (!email) {
+      setForgotMsg("Informe seu e-mail acima para enviar o link de recuperação.");
+      return;
+    }
+
+    try {
+      setSending(true);
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/reset-password`,
+      });
+      setSending(false);
+
+      if (error) setForgotMsg(error.message);
+      else setForgotMsg("Enviamos um link de recuperação para o seu e-mail.");
+    } catch (ex) {
+      setSending(false);
+      setForgotMsg("Não foi possível enviar o e-mail agora. Tente novamente em instantes.");
+    }
   }
 
   return (
@@ -45,8 +72,8 @@ export default function Login() {
         <div>
           <div className="flex items-center justify-between mb-2">
             <label className="block text-sm">Password</label>
-            <SubtleLink href="#" onClick={(e) => e.preventDefault()}>
-              Forgot Password
+            <SubtleLink href="#" onClick={handleForgotPassword}>
+              {sending ? "Enviando..." : "Forgot Password"}
             </SubtleLink>
           </div>
           <Input
@@ -61,6 +88,7 @@ export default function Login() {
         <Button disabled={loading}>{loading ? "Entrando..." : "Login"}</Button>
 
         {err && <p className="text-sm text-red-400">{err}</p>}
+        {forgotMsg && <p className="text-sm mt-1 opacity-90">{forgotMsg}</p>}
 
         <p className="text-sm text-center opacity-80">
           Don’t have an account?{" "}

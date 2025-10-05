@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { supabase } from "../lib/supabaseClient";
 
 function Stat({ label, value }) {
@@ -11,39 +11,85 @@ function Stat({ label, value }) {
   );
 }
 
-export default function EventRoom() {
-  const { id } = useParams(); // agora este id é occurrence_id
+function isLiveNow(startsAt, endsAt) {
+  const now = new Date();
+  const s = startsAt ? new Date(startsAt) : null;
+  const e = endsAt ? new Date(endsAt) : null;
+  return (!s || s <= now) && (!e || now <= e);
+}
+
+export default function Occurrence() {
+  const { id } = useParams(); // occurrence_id (pode estar desatualizado)
+  const location = useLocation();
   const nav = useNavigate();
 
-  const [occ, setOcc] = useState(null); // ocorrência + evento
+  const [occ, setOcc] = useState(null);
+  const [live, setLive] = useState(false);
+  const [loading, setLoading] = useState(true);
+
   const [votes, setVotes] = useState({ up: 0, down: 0 });
   const [avg, setAvg] = useState({ dj: 0, fila: 0, preco: 0, seguranca: 0 });
 
   const [userId, setUserId] = useState(null);
   const [role, setRole] = useState("user");
-  const canDelete = !!occ && (userId === occ?.created_by || role === "admin");
-  const canEdit = canDelete;
+  const [canEdit, setCanEdit] = useState(false);
 
-  // evento está “aberto” (ao vivo)
-  const [isLive, setIsLive] = useState(false);
-
-  // -------- Loads principais --------
+  // ------- loads -------
   async function loadOccurrence() {
+    setLoading(true);
+
+    // 1️⃣ tenta carregar pela ID
     const { data, error } = await supabase
       .from("v_occ_with_event")
       .select("*")
       .eq("id", id)
       .maybeSingle();
-    if (!error && data) {
-      setOcc(data);
 
-      const now = new Date();
-      const starts = data.starts_at ? new Date(data.starts_at) : null;
-      const ends = data.ends_at ? new Date(data.ends_at) : null;
-      setIsLive(
-        starts && ends ? now >= starts && now <= ends : true
-      );
+    let row = data || null;
+    if (error) console.error(error);
+
+    // 2️⃣ fallback por (event_id, starts_at)
+    if (!row) {
+      const qs = new URLSearchParams(location.search);
+      const eventId = qs.get("event");
+      const t = qs.get("t");
+
+      if (eventId && t) {
+        const { data: occs } = await supabase
+          .from("v_occ_with_event")
+          .select("*")
+          .eq("event_id", eventId)
+          .order("starts_at", { ascending: true });
+
+        // procura a ocorrência mais próxima do horário
+        if (occs?.length) {
+          const base = new Date(t);
+          const nearest = occs.reduce((a, b) => {
+            const da = Math.abs(new Date(a.starts_at) - base);
+            const db = Math.abs(new Date(b.starts_at) - base);
+            return da < db ? a : b;
+          });
+          row = nearest;
+        }
+      }
     }
+
+    // 3️⃣ se mesmo assim não achou, volta pra home
+    if (!row) {
+      nav("/home", { replace: true });
+      return;
+    }
+
+    // seta dados e atualiza URL se o ID estiver desatualizado
+    setOcc(row);
+    setLive(isLiveNow(row.starts_at, row.ends_at));
+
+    if (row.id !== id) {
+      const qs = new URLSearchParams(location.search);
+      nav(`/occ/${row.id}?${qs.toString()}`, { replace: true });
+    }
+
+    setLoading(false);
   }
 
   async function loadVotes() {
@@ -53,9 +99,10 @@ export default function EventRoom() {
       .eq("occurrence_id", id);
     if (error) return;
     const list = data || [];
-    const up = list.filter((v) => v.upvote === true).length;
-    const down = list.filter((v) => v.upvote === false).length;
-    setVotes({ up, down });
+    setVotes({
+      up: list.filter((v) => v.upvote === true).length,
+      down: list.filter((v) => v.upvote === false).length,
+    });
   }
 
   async function loadRatings() {
@@ -76,15 +123,11 @@ export default function EventRoom() {
     });
   }
 
-  // -------- Ações --------
   async function sendVote(up) {
-    if (!isLive) {
-      alert("Este evento não está aberto para votos no momento.");
-      return;
-    }
+    if (!live) return alert("Esta ocorrência não está aberta para votos.");
     const { data: u } = await supabase.auth.getUser();
     const uid = u?.user?.id;
-    if (!uid) return alert("É necessário estar logada para votar.");
+    if (!uid) return alert("Faça login para votar.");
 
     const { error } = await supabase
       .from("votes")
@@ -92,18 +135,15 @@ export default function EventRoom() {
         { occurrence_id: id, user_id: uid, upvote: up },
         { onConflict: "occurrence_id,user_id" }
       );
-    if (error) alert(error.message);
-    else loadVotes();
+    if (error) return alert(error.message);
+    loadVotes();
   }
 
   async function sendRating(key, score) {
-    if (!isLive) {
-      alert("Este evento não está aberto para avaliações no momento.");
-      return;
-    }
+    if (!live) return alert("Esta ocorrência não está aberta para avaliações.");
     const { data: u } = await supabase.auth.getUser();
     const uid = u?.user?.id;
-    if (!uid) return alert("É necessário estar logada para avaliar.");
+    if (!uid) return alert("Faça login para avaliar.");
 
     const { error } = await supabase
       .from("ratings")
@@ -111,67 +151,67 @@ export default function EventRoom() {
         { occurrence_id: id, user_id: uid, key, score },
         { onConflict: "occurrence_id,user_id,key" }
       );
-    if (error) alert(error.message);
-    else loadRatings();
+    if (error) return alert(error.message);
+    loadRatings();
   }
 
-  async function deleteEvent() {
-    if (!confirm("Tem certeza que deseja excluir este evento?")) return;
-    const { error } = await supabase.from("events").delete().eq("id", occ.event_id);
-    if (error) alert(error.message);
-    else nav("/home", { replace: true });
+  async function deleteOccurrence() {
+    if (!confirm("Tem certeza que deseja excluir esta ocorrência?")) return;
+    const { error } = await supabase
+      .from("event_occurrences")
+      .delete()
+      .eq("id", id);
+    if (error) return alert(error.message);
+    nav("/home", { replace: true });
   }
 
-  // -------- Inicialização --------
   useEffect(() => {
     (async () => {
       const { data: u } = await supabase.auth.getUser();
       const uid = u?.user?.id || null;
       setUserId(uid);
 
+      let r = "user";
       if (uid) {
         const { data: prof } = await supabase
           .from("profiles")
           .select("role")
           .eq("id", uid)
           .maybeSingle();
-        if (prof?.role) setRole(prof.role);
+        if (prof?.role) r = prof.role;
       }
+      setRole(r);
 
       await loadOccurrence();
       await loadVotes();
       await loadRatings();
     })();
-  }, [id]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, location.search]);
 
-  // Realtime (para votos e notas)
   useEffect(() => {
-    const channel = supabase
-      .channel(`occ-room-${id}`)
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "votes", filter: `occurrence_id=eq.${id}` },
-        loadVotes
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "ratings", filter: `occurrence_id=eq.${id}` },
-        loadRatings
-      )
-      .subscribe();
+    if (!occ || !userId) return;
+    (async () => {
+      const { data: ev } = await supabase
+        .from("events")
+        .select("created_by")
+        .eq("id", occ.event_id)
+        .maybeSingle();
+      setCanEdit(!!userId && (userId === ev?.created_by || role === "admin"));
+    })();
+  }, [occ, userId, role]);
 
-    return () => supabase.removeChannel(channel);
-  }, [id]);
+  if (loading) return null; // remove o “Carregando…” também!
 
-  if (!occ) return <div className="p-6">Carregando…</div>;
-
-  const goBackToHome = () => nav("/home");
+  const when =
+    (occ.starts_at ? new Date(occ.starts_at).toLocaleString("pt-BR") : "Sem início") +
+    (occ.ends_at ? ` — ${new Date(occ.ends_at).toLocaleTimeString("pt-BR")}` : "");
 
   return (
     <div className="min-h-screen p-6 max-w-4xl mx-auto space-y-4">
       <div className="flex items-center justify-between">
         <button
-          onClick={goBackToHome}
+          onClick={() => nav("/home")}
           className="rounded-full px-3 py-2 bg-white/10 hover:bg-white/20"
         >
           ← Voltar
@@ -183,16 +223,15 @@ export default function EventRoom() {
               onClick={() => nav(`/event/${occ.event_id}/edit`)}
               className="rounded-full px-3 py-2 bg-white/10 hover:bg-white/20"
             >
-              Editar
+              Editar evento-base
             </button>
           )}
-          {canDelete && (
+          {canEdit && (
             <button
-              onClick={deleteEvent}
+              onClick={deleteOccurrence}
               className="rounded-full px-3 py-2 bg-red-700/70 hover:bg-red-700"
-              title="Excluir evento"
             >
-              Excluir evento
+              Excluir ocorrência
             </button>
           )}
         </div>
@@ -203,8 +242,9 @@ export default function EventRoom() {
           <div>
             <h1 className="text-2xl font-bold">{occ.title}</h1>
             <p className="opacity-80">{occ.venue || "Sem local"}</p>
+            <p className="text-xs opacity-70 mt-1">{when}</p>
           </div>
-          {isLive && (
+          {live && (
             <span className="text-xs px-2 py-1 rounded-full bg-red-700/30 text-red-300">
               AO VIVO
             </span>
@@ -214,21 +254,21 @@ export default function EventRoom() {
         {occ.image_url && (
           <img
             src={occ.image_url}
-            alt="Capa do evento"
+            alt="Capa"
             className="w-full h-56 object-cover rounded-2xl"
           />
         )}
 
         <div className="mt-2 flex gap-2">
           <button
-            disabled={!isLive}
+            disabled={!live}
             className="rounded-xl px-4 py-2 bg-white/10 hover:bg-white/20 disabled:opacity-40 disabled:cursor-not-allowed"
             onClick={() => sendVote(true)}
           >
             👍 Bom
           </button>
           <button
-            disabled={!isLive}
+            disabled={!live}
             className="rounded-xl px-4 py-2 bg-white/10 hover:bg-white/20 disabled:opacity-40 disabled:cursor-not-allowed"
             onClick={() => sendVote(false)}
           >
@@ -243,7 +283,7 @@ export default function EventRoom() {
         </div>
 
         <div className="space-y-3">
-          <p className="font-semibold text-lg">Avalie conforme sua satisfação: </p>
+          <p className="font-semibold text-lg">Avalie conforme sua satisfação:</p>
 
           <div className="grid md:grid-cols-2 gap-3">
             {["dj", "fila", "preco", "seguranca"].map((k) => (
@@ -256,7 +296,7 @@ export default function EventRoom() {
                   {[1, 2, 3, 4, 5].map((s) => (
                     <button
                       key={s}
-                      disabled={!isLive}
+                      disabled={!live}
                       className="rounded-xl px-3 py-2 bg-white/10 hover:bg-white/20 disabled:opacity-40 disabled:cursor-not-allowed"
                       onClick={() => sendRating(k, s)}
                     >
@@ -269,9 +309,9 @@ export default function EventRoom() {
           </div>
         </div>
 
-        {!isLive && (
+        {!live && (
           <p className="text-sm opacity-70">
-            Interações desativadas: esta ocorrência não está ao vivo no momento.
+            Interações desativadas: esta ocorrência não está ao vivo.
           </p>
         )}
       </div>
