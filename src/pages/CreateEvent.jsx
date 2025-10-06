@@ -4,6 +4,14 @@ import { useNavigate } from "react-router-dom";
 
 const WEEK_LABELS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
 
+/** Garante formato "HH:MM" aceito pelo <input type="time"> e pelo Postgres TIME */
+function toTimeInputValue(t) {
+  if (!t) return "";
+  if (/^\d{2}:\d{2}$/.test(t)) return t;
+  const m = /^(\d{2}:\d{2})/.exec(t);
+  return m ? m[1] : "";
+}
+
 export default function CreateEvent() {
   const nav = useNavigate();
 
@@ -14,16 +22,16 @@ export default function CreateEvent() {
   // modo: único ou recorrente
   const [recurring, setRecurring] = useState(true);
 
-  // único
-  const [singleStart, setSingleStart] = useState(""); // datetime-local
-  const [singleEnd, setSingleEnd] = useState("");     // datetime-local
+  // único (inputs em horário local)
+  const [singleStart, setSingleStart] = useState(""); // "YYYY-MM-DDTHH:MM"
+  const [singleEnd, setSingleEnd] = useState("");     // idem
 
   // recorrente
   const [days, setDays] = useState([]);               // smallint[] 0..6
-  const [recurStart, setRecurStart] = useState("");   // time
-  const [recurEnd, setRecurEnd] = useState("");       // time
-  const [activeFrom, setActiveFrom] = useState("");   // date
-  const [activeUntil, setActiveUntil] = useState(""); // date
+  const [recurStart, setRecurStart] = useState("");   // "HH:MM"
+  const [recurEnd, setRecurEnd] = useState("");       // "HH:MM"
+  const [activeFrom, setActiveFrom] = useState("");   // "YYYY-MM-DD"
+  const [activeUntil, setActiveUntil] = useState(""); // "YYYY-MM-DD"
 
   // imagem
   const [imageFile, setImageFile] = useState(null);
@@ -57,16 +65,18 @@ export default function CreateEvent() {
       const uid = u?.user?.id;
       if (!uid) throw new Error("Faça login para criar eventos.");
 
-      // monta payload
       let payload = {
         title,
         venue,
-        created_by: uid,
+        created_by: uid, // há trigger que cobre, mas manter explícito é ok
       };
 
       if (recurring) {
         if (days.length === 0) throw new Error("Selecione ao menos um dia da semana.");
         if (!recurStart || !recurEnd) throw new Error("Defina hora de início e de término.");
+
+        const startHM = toTimeInputValue(recurStart);
+        const endHM = toTimeInputValue(recurEnd);
 
         payload = {
           ...payload,
@@ -74,18 +84,23 @@ export default function CreateEvent() {
           starts_at: null,
           ends_at: null,
           recur_days: days,
-          recur_start: recurStart,
-          recur_end: recurEnd,
+          recur_start: startHM,
+          recur_end: endHM,
           active_from: activeFrom || null,
           active_until: activeUntil || null,
         };
       } else {
         if (!singleStart) throw new Error("Defina o início do evento.");
+
+        // Converte o valor local do input p/ ISO (UTC) apenas na gravação
+        const startsISO = new Date(singleStart).toISOString();
+        const endsISO = singleEnd ? new Date(singleEnd).toISOString() : null;
+
         payload = {
           ...payload,
           recurring: false,
-          starts_at: new Date(singleStart).toISOString(),
-          ends_at: singleEnd ? new Date(singleEnd).toISOString() : null,
+          starts_at: startsISO,
+          ends_at: endsISO,
           recur_days: null,
           recur_start: null,
           recur_end: null,
@@ -100,7 +115,7 @@ export default function CreateEvent() {
         .insert(payload)
         .select("*")
         .single();
-      if (insertErr) throw insertErr;
+      if (insertErr) throw new Error(insertErr.message);
 
       // upload de imagem (opcional)
       if (imageFile) {
@@ -126,7 +141,7 @@ export default function CreateEvent() {
         if (updErr) throw new Error(`Falha ao salvar capa no evento: ${updErr.message}`);
       }
 
-      // redireciona (pode ser /home ou /event/:id)
+      // redireciona para a página do evento-base
       nav(`/event/${ev.id}`);
 
     } catch (e) {
@@ -195,7 +210,7 @@ export default function CreateEvent() {
                   type="time"
                   className="w-full rounded-xl px-3 py-2 bg-white/10"
                   value={recurStart}
-                  onChange={(e) => setRecurStart(e.target.value)}
+                  onChange={(e) => setRecurStart(toTimeInputValue(e.target.value))}
                 />
               </div>
               <div>
@@ -204,7 +219,7 @@ export default function CreateEvent() {
                   type="time"
                   className="w-full rounded-xl px-3 py-2 bg-white/10"
                   value={recurEnd}
-                  onChange={(e) => setRecurEnd(e.target.value)}
+                  onChange={(e) => setRecurEnd(toTimeInputValue(e.target.value))}
                 />
               </div>
             </div>

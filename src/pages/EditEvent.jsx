@@ -4,6 +4,29 @@ import { supabase } from "../lib/supabaseClient";
 
 const WEEK_LABELS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
 
+/** Converte timestamptz -> "YYYY-MM-DDTHH:MM" (local) p/ <input type="datetime-local"> */
+function fmtLocalForDatetimeLocal(ts) {
+  if (!ts) return "";
+  const d = new Date(ts);
+  const pad = (n) => String(n).padStart(2, "0");
+  const y = d.getFullYear();
+  const m = pad(d.getMonth() + 1);
+  const day = pad(d.getDate());
+  const hh = pad(d.getHours());
+  const mm = pad(d.getMinutes());
+  return `${y}-${m}-${day}T${hh}:${mm}`;
+}
+
+/** Se vier "HH:MM:SS" do banco, reduz para "HH:MM" (input type="time") */
+function toTimeInputValue(t) {
+  if (!t) return "";
+  // já está no formato HH:MM?
+  if (/^\d{2}:\d{2}$/.test(t)) return t;
+  // formato HH:MM:SS (ou com frações)
+  const m = /^(\d{2}:\d{2})/.exec(t);
+  return m ? m[1] : "";
+}
+
 export default function EditEvent() {
   const { id } = useParams();
   const nav = useNavigate();
@@ -82,29 +105,19 @@ export default function EditEvent() {
         setTitle(data.title || "");
         setVenue(data.venue || "");
 
-        // modo
         const isRec = !!data.recurring;
         setRecurring(isRec);
 
         if (isRec) {
           setDays(Array.isArray(data.recur_days) ? data.recur_days : []);
-          setRecurStart(data.recur_start || "");
-          setRecurEnd(data.recur_end || "");
+          setRecurStart(toTimeInputValue(data.recur_start || ""));
+          setRecurEnd(toTimeInputValue(data.recur_end || ""));
+          // Dates (DATE) já vêm como "YYYY-MM-DD" do Supabase — usar direto
           setActiveFrom(data.active_from || "");
           setActiveUntil(data.active_until || "");
         } else {
-          // Se já está no formato local, usa direto. Se não, converte para local.
-          const formatLocal = (dt) => {
-            if (!dt) return "";
-            // Se já está no formato correto, retorna direto
-            if (/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(dt)) return dt.slice(0, 16);
-            // Se não, converte para local
-            const d = new Date(dt);
-            const pad = (n) => n.toString().padStart(2, '0');
-            return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-          };
-          setSingleStart(formatLocal(data.starts_at));
-          setSingleEnd(formatLocal(data.ends_at));
+          setSingleStart(fmtLocalForDatetimeLocal(data.starts_at));
+          setSingleEnd(fmtLocalForDatetimeLocal(data.ends_at));
         }
 
         setPreview(data.image_url || "");
@@ -131,24 +144,34 @@ export default function EditEvent() {
         if (days.length === 0) throw new Error("Selecione ao menos um dia da semana.");
         if (!recurStart || !recurEnd) throw new Error("Defina hora de início e de término.");
 
+        // garante "HH:MM"
+        const startHM = toTimeInputValue(recurStart);
+        const endHM = toTimeInputValue(recurEnd);
+
         patch = {
           ...patch,
           recurring: true,
           starts_at: null,
           ends_at: null,
           recur_days: days,
-          recur_start: recurStart,
-          recur_end: recurEnd,
+          recur_start: startHM, // Postgres TIME aceita "HH:MM"
+          recur_end: endHM,
           active_from: activeFrom || null,
           active_until: activeUntil || null,
         };
       } else {
         if (!singleStart) throw new Error("Defina o início do evento.");
+
+        // singleStart/singleEnd são strings "YYYY-MM-DDTHH:MM" (local)
+        // Enviamos em ISO (timestamptz no banco vai guardar UTC corretamente)
+        const startsISO = new Date(singleStart).toISOString();
+        const endsISO = singleEnd ? new Date(singleEnd).toISOString() : null;
+
         patch = {
           ...patch,
           recurring: false,
-          starts_at: new Date(singleStart).toISOString(),
-          ends_at: singleEnd ? new Date(singleEnd).toISOString() : null,
+          starts_at: startsISO,
+          ends_at: endsISO,
           recur_days: null,
           recur_start: null,
           recur_end: null,
@@ -184,7 +207,8 @@ export default function EditEvent() {
         if (e2) throw new Error(`Falha ao atualizar capa: ${e2.message}`);
       }
 
-      nav(`/event/${id}`);
+      // Volta para a página do evento-base
+      nav(`/event/${id}`, { replace: true });
 
     } catch (e) {
       setErr(e.message || String(e));
