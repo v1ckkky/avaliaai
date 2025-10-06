@@ -12,6 +12,8 @@ import CreateEvent from "./pages/CreateEvent";
 import Settings from "./pages/Settings";
 import AdminRequests from "./pages/AdminRequests";
 import EditEvent from "./pages/EditEvent";
+import OwnerDashboard from "./pages/OwnerDashboard";
+import OwnerApply from "./pages/OwnerApply";
 
 export default function App() {
   const [session, setSession] = useState(null);
@@ -47,7 +49,8 @@ export default function App() {
         <Route path="/settings" element={session ? <Settings /> : <Navigate to="/login" />} />
         <Route path="/admin/requests" element={session ? <AdminRequests /> : <Navigate to="/login" />} />
         <Route path="/event/:id/edit" element={session ? <EditEvent /> : <Navigate to="/login" />} />
-
+        <Route path="/owner" element={session ? <OwnerDashboard /> : <Navigate to="/login" />} />
+        <Route path="/owner/apply" element={session ? <OwnerApply /> : <Navigate to="/login" />} />
         {/* Fallback */}
         <Route path="*" element={<Navigate to="/" />} />
       </Routes>

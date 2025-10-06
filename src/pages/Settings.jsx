@@ -1,157 +1,384 @@
+// src/pages/Settings.jsx
 import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabaseClient";
 import { useNavigate } from "react-router-dom";
 
 export default function Settings() {
   const nav = useNavigate();
+
+  // auth/profile
   const [user, setUser] = useState(null);
-  const [displayName, setDisplayName] = useState("");
-  const [email, setEmail] = useState("");
-  const [newPassword, setNewPassword] = useState("");
+  const [profile, setProfile] = useState({ display_name: "", role: "user" });
+  const [loading, setLoading] = useState(true);
+
+  // feedback global
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
-  const [role, setRole] = useState("user");
-  const [requestStatus, setRequestStatus] = useState(null); // pending/approved/rejected/null
-  const [note, setNote] = useState("");
+
+  // display name
+  const [displayName, setDisplayName] = useState("");
+
+  // password & email
+  const [newPass, setNewPass] = useState("");
+  const [newEmail, setNewEmail] = useState("");
+
+  // owner request (dados extras)
+  const [businessName, setBusinessName] = useState("");
+  const [documentId, setDocumentId] = useState("");
+  const [phone, setPhone] = useState("");
+  const [instagram, setInstagram] = useState("");
+  const [website, setWebsite] = useState("");
+  const [reason, setReason] = useState("");
+
+  // estado da última solicitação
+  const [latestReq, setLatestReq] = useState(null); // {id,status,created_at,note}
 
   useEffect(() => {
     (async () => {
+      setLoading(true);
+      setMsg("");
+      setErr("");
+
       const { data: u } = await supabase.auth.getUser();
-      setUser(u?.user || null);
-      if (!u?.user) return;
+      const me = u?.user || null;
+      setUser(me);
 
-      setEmail(u.user.email || "");
+      if (me?.id) {
+        const { data: prof } = await supabase
+          .from("profiles")
+          .select("display_name, role")
+          .eq("id", me.id)
+          .maybeSingle();
 
-      // carrega/garante profile
-      const { data: prof } = await supabase.from("profiles").select("*").eq("id", u.user.id).maybeSingle();
-      if (!prof) {
-        await supabase.from("profiles").insert({ id: u.user.id, display_name: "", role: "user" });
-        setRole("user");
-      } else {
-        setDisplayName(prof.display_name || "");
-        setRole(prof.role || "user");
+        if (prof) {
+          setProfile(prof);
+          setDisplayName(prof.display_name || "");
+        }
+
+        const { data: req } = await supabase
+          .from("owner_requests")
+          .select("id,status,created_at,note")
+          .eq("user_id", me.id)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (req) setLatestReq(req);
       }
 
-      // status de solicitação (se existir)
-      const { data: req } = await supabase
-        .from("owner_requests")
-        .select("status").eq("user_id", u.user.id).order("created_at",{ascending:false}).limit(1);
-      setRequestStatus(req?.[0]?.status ?? null);
+      setLoading(false);
     })();
   }, []);
 
-async function saveProfile(e) {
-  e.preventDefault();
-  setErr("");
-  setMsg("");
-
-  // busca usuário logado
-  const { data: u, error: userError } = await supabase.auth.getUser();
-  if (userError || !u?.user) {
-    return setErr("Usuário não autenticado.");
+  // Helpers de mensagem
+  function flashOk(t) {
+    setMsg(t);
+    setErr("");
+    setTimeout(() => setMsg(""), 3000);
+  }
+  function flashErr(t) {
+    setErr(t);
+    setMsg("");
+    setTimeout(() => setErr(""), 4000);
   }
 
-  // faz o upsert no perfil
-  const { error } = await supabase
-    .from("profiles")
-    .upsert({
-      id: u.user.id, // <- ID do usuário autenticado
-      display_name: displayName,
-      updated_at: new Date().toISOString(),
-    });
-
-  if (error) {
-    return setErr(error.message);
+  // Atualiza nome de exibição
+  async function saveDisplayName() {
+    try {
+      if (!user?.id) throw new Error("Faça login.");
+      const { error } = await supabase
+        .from("profiles")
+        .upsert({ id: user.id, display_name: displayName });
+      if (error) throw error;
+      flashOk("Nome atualizado!");
+    } catch (e) {
+      flashErr(e.message || String(e));
+    }
   }
 
-  setMsg("Nome atualizado!");
-}
-
-
-  async function changePassword(e) {
-    e.preventDefault();
-    setErr(""); setMsg("");
-    if (!newPassword || newPassword.length < 6) return setErr("Senha mínima de 6 caracteres.");
-    const { error } = await supabase.auth.updateUser({ password: newPassword });
-    if (error) return setErr(error.message);
-    setNewPassword("");
-    setMsg("Senha alterada!");
+  // Atualiza senha
+  async function changePassword() {
+    try {
+      if (!newPass || newPass.length < 6) {
+        throw new Error("A senha precisa ter pelo menos 6 caracteres.");
+      }
+      const { error } = await supabase.auth.updateUser({ password: newPass });
+      if (error) throw error;
+      setNewPass("");
+      flashOk("Senha alterada com sucesso.");
+    } catch (e) {
+      flashErr(e.message || String(e));
+    }
   }
 
-  async function changeEmail(e) {
-    e.preventDefault();
-    setErr(""); setMsg("");
-    if (!email) return setErr("Informe um e-mail válido.");
-    const { error } = await supabase.auth.updateUser({ email });
-    if (error) return setErr(error.message);
-    setMsg("E-mail atualizado! (pode exigir confirmação dependendo das configurações)");
+  // Atualiza e-mail
+  async function changeEmail() {
+    try {
+      if (!newEmail) throw new Error("Informe o e-mail.");
+      const { error } = await supabase.auth.updateUser({ email: newEmail });
+      if (error) throw error;
+      flashOk("E-mail atualizado (confirme no link enviado).");
+    } catch (e) {
+      flashErr(e.message || String(e));
+    }
   }
 
-  async function requestOwner(e) {
-    e.preventDefault();
-    setErr(""); setMsg("");
-    if (!user) return;
-    const { error } = await supabase.from("owner_requests").insert({ user_id: user.id, note });
-    if (error) return setErr(error.message);
-    setRequestStatus("pending");
-    setMsg("Solicitação enviada! Aguarde aprovação do administrador.");
+  // Monta nota “formatada” para salvar nos pedidos
+  function buildOwnerNote() {
+    const lines = [
+      `Empresa/Nome: ${businessName}`,
+      `Documento: ${documentId}`,
+      phone ? `Telefone: ${phone}` : null,
+      instagram ? `Instagram: ${instagram}` : null,
+      website ? `Site: ${website}` : null,
+      "",
+      `Motivo: ${reason}`,
+    ].filter(Boolean);
+    return lines.join("\n");
   }
+
+  // Cria/atualiza a solicitação de proprietário
+  async function submitOwnerRequest() {
+    try {
+      if (!user?.id) throw new Error("Faça login.");
+      if (!businessName.trim()) throw new Error("Informe a Razão Social / Nome.");
+      if (!documentId.trim()) throw new Error("Informe o documento (CNPJ/CPF).");
+      if (!reason.trim() || reason.trim().length < 8)
+        throw new Error("Descreva o motivo (mín. 8 caracteres).");
+
+      const note = buildOwnerNote();
+
+      // Se existe pendente, atualiza; senão, cria
+      if (latestReq?.status === "pending") {
+        const { error } = await supabase
+          .from("owner_requests")
+          .update({ note })
+          .eq("id", latestReq.id);
+        if (error) throw error;
+        flashOk("Solicitação atualizada. Aguarde revisão.");
+      } else {
+        const { error } = await supabase
+          .from("owner_requests")
+          .insert({ user_id: user.id, note }); // status = 'pending' por padrão
+        if (error) throw error;
+        flashOk("Solicitação enviada. Aguarde revisão.");
+      }
+
+      // refetch último pedido
+      const { data: req } = await supabase
+        .from("owner_requests")
+        .select("id,status,created_at,note")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (req) setLatestReq(req);
+    } catch (e) {
+      flashErr(e.message || String(e));
+    }
+  }
+
+  if (loading) return <div className="p-6">Carregando…</div>;
 
   return (
     <div className="min-h-screen p-6 max-w-3xl mx-auto space-y-6">
-      <button onClick={() => nav(-1)} className="rounded-full px-3 py-2 bg-white/10 hover:bg-white/20">← Voltar</button>
+      <button
+        onClick={() => nav(-1)}
+        className="rounded-full px-3 py-2 bg-white/10 hover:bg-white/20"
+      >
+        ← Voltar
+      </button>
 
-      <div className="rounded-2xl p-5 bg-white/5 space-y-4">
-        <h1 className="text-xl font-bold">Configurações da Conta</h1>
-        {err && <p className="text-red-400 text-sm">{err}</p>}
-        {msg && <p className="text-green-400 text-sm">{msg}</p>}
+      <h1 className="text-xl font-bold mt-2">Configurações</h1>
 
-        <form onSubmit={saveProfile} className="space-y-3">
+      {msg && <p className="text-green-400 text-sm">{msg}</p>}
+      {err && <p className="text-red-400 text-sm">{err}</p>}
+
+      {/* Perfil básico */}
+      <section className="rounded-2xl p-5 bg-white/5 space-y-4">
+        <h2 className="font-semibold">Perfil</h2>
+
+        <div className="grid sm:grid-cols-2 gap-3">
           <div>
-            <label className="block text-sm mb-1">Nome público</label>
-            <input className="w-full rounded-xl px-3 py-3 bg-neutral-100 text-neutral-900 outline-none"
-              value={displayName} onChange={(e)=>setDisplayName(e.target.value)} placeholder="Seu nome" />
+            <label className="text-sm opacity-80">Nome de exibição</label>
+            <input
+              className="w-full rounded-xl px-3 py-2 bg-white/10"
+              value={displayName}
+              onChange={(e) => setDisplayName(e.target.value)}
+              placeholder="Seu nome"
+            />
           </div>
-          <button className="rounded-full px-4 py-2 bg-white/10 hover:bg-white/20">Salvar nome</button>
-        </form>
+          <div className="flex items-end">
+            <button
+              onClick={saveDisplayName}
+              className="rounded-xl px-3 py-2 bg-white/10 hover:bg-white/20 w-full sm:w-auto"
+            >
+              Salvar nome
+            </button>
+          </div>
+        </div>
 
-        <form onSubmit={changePassword} className="space-y-3">
+        <div className="grid sm:grid-cols-2 gap-3">
           <div>
-            <label className="block text-sm mb-1">Nova senha</label>
-            <input type="password" className="w-full rounded-xl px-3 py-3 bg-neutral-100 text-neutral-900 outline-none"
-              value={newPassword} onChange={(e)=>setNewPassword(e.target.value)} placeholder="Mín. 6 caracteres" />
+            <label className="text-sm opacity-80">Nova senha</label>
+            <input
+              type="password"
+              className="w-full rounded-xl px-3 py-2 bg-white/10"
+              placeholder="Mín. 6 caracteres"
+              value={newPass}
+              onChange={(e) => setNewPass(e.target.value)}
+            />
           </div>
-          <button className="rounded-full px-4 py-2 bg-white/10 hover:bg-white/20">Alterar senha</button>
-        </form>
+          <div className="flex items-end">
+            <button
+              onClick={changePassword}
+              className="rounded-xl px-3 py-2 bg-white/10 hover:bg-white/20 w-full sm:w-auto"
+            >
+              Alterar senha
+            </button>
+          </div>
+        </div>
 
-        <form onSubmit={changeEmail} className="space-y-3">
+        <div className="grid sm:grid-cols-2 gap-3">
           <div>
-            <label className="block text-sm mb-1">E-mail</label>
-            <input type="email" className="w-full rounded-xl px-3 py-3 bg-neutral-100 text-neutral-900 outline-none"
-              value={email} onChange={(e)=>setEmail(e.target.value)} placeholder="seu@email.com" />
+            <label className="text-sm opacity-80">E-mail</label>
+            <input
+              type="email"
+              className="w-full rounded-xl px-3 py-2 bg-white/10"
+              placeholder={user?.email || "seu@email.com"}
+              value={newEmail}
+              onChange={(e) => setNewEmail(e.target.value)}
+            />
           </div>
-          <button className="rounded-full px-4 py-2 bg-white/10 hover:bg-white/20">Atualizar e-mail</button>
-        </form>
-      </div>
+          <div className="flex items-end">
+            <button
+              onClick={changeEmail}
+              className="rounded-xl px-3 py-2 bg-white/10 hover:bg-white/20 w-full sm:w-auto"
+            >
+              Atualizar e-mail
+            </button>
+          </div>
+        </div>
 
-      <div className="rounded-2xl p-5 bg-white/5 space-y-3">
-        <h2 className="font-semibold">Conta de Proprietário</h2>
-        <p className="text-sm opacity-80">Status atual: <b>{role}</b>{role==='user' && (requestStatus ? ` • solicitação: ${requestStatus}` : "")}</p>
+        <p className="text-xs opacity-70">
+          Papel atual:{" "}
+          <span className="inline-block rounded-full px-2 py-0.5 bg-white/10">
+            {profile.role || "user"}
+          </span>
+        </p>
+      </section>
 
-        {role === "user" && requestStatus !== "pending" && (
-          <form onSubmit={requestOwner} className="space-y-3">
-            <div>
-              <label className="block text-sm mb-1">Por que você precisa ser proprietário?</label>
-              <textarea className="w-full rounded-xl px-3 py-3 bg-neutral-100 text-neutral-900 outline-none"
-                rows={3} value={note} onChange={(e)=>setNote(e.target.value)} placeholder="Ex.: Sou responsável pelos eventos do Clube X..." />
-            </div>
-            <button className="rounded-full px-4 py-2 bg-white/10 hover:bg-white/20">Solicitar acesso</button>
-          </form>
+      {/* Solicitação para proprietário */}
+      <section className="rounded-2xl p-5 bg-white/5 space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="font-semibold">Conta de Proprietário</h2>
+          {latestReq && (
+            <span className="text-xs px-2 py-1 rounded-full bg-white/10">
+              Último status:{" "}
+              <strong>
+                {latestReq.status === "pending"
+                  ? "pendente"
+                  : latestReq.status === "approved"
+                  ? "aprovado"
+                  : latestReq.status === "rejected"
+                  ? "rejeitado"
+                  : latestReq.status}
+              </strong>
+            </span>
+          )}
+        </div>
+
+        <div className="grid sm:grid-cols-2 gap-3">
+          <div>
+            <label className="text-sm opacity-80">Razão Social / Nome</label>
+            <input
+              className="w-full rounded-xl px-3 py-2 bg-white/10"
+              value={businessName}
+              onChange={(e) => setBusinessName(e.target.value)}
+              placeholder="Ex.: Clube X Produções LTDA"
+            />
+          </div>
+          <div>
+            <label className="text-sm opacity-80">Documento (CNPJ/CPF)</label>
+            <input
+              className="w-full rounded-xl px-3 py-2 bg-white/10"
+              value={documentId}
+              onChange={(e) => setDocumentId(e.target.value)}
+              placeholder="Ex.: 12.345.678/0001-90"
+            />
+          </div>
+        </div>
+
+        <div className="grid sm:grid-cols-3 gap-3">
+          <div>
+            <label className="text-sm opacity-80">Telefone/WhatsApp</label>
+            <input
+              className="w-full rounded-xl px-3 py-2 bg-white/10"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              placeholder="(11) 9 9999-9999"
+            />
+          </div>
+          <div>
+            <label className="text-sm opacity-80">Instagram</label>
+            <input
+              className="w-full rounded-xl px-3 py-2 bg-white/10"
+              value={instagram}
+              onChange={(e) => setInstagram(e.target.value)}
+              placeholder="@sua_pagina"
+            />
+          </div>
+          <div>
+            <label className="text-sm opacity-80">Site</label>
+            <input
+              className="w-full rounded-xl px-3 py-2 bg-white/10"
+              value={website}
+              onChange={(e) => setWebsite(e.target.value)}
+              placeholder="https://seusite.com"
+            />
+          </div>
+        </div>
+
+        <div>
+          <label className="text-sm opacity-80">Por que você precisa ser proprietário?</label>
+          <textarea
+            rows={4}
+            className="w-full rounded-xl px-3 py-2 bg-white/10"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="Ex.: Sou responsável pelos eventos do Clube X e preciso gerenciar as publicações…"
+          />
+        </div>
+
+        <div className="flex gap-2">
+          <button
+            onClick={submitOwnerRequest}
+            className="rounded-xl px-4 py-2 bg-white/10 hover:bg-white/20"
+          >
+            {latestReq?.status === "pending"
+              ? "Atualizar solicitação"
+              : "Solicitar acesso"}
+          </button>
+
+          <button
+            onClick={() => nav("/home")}
+            className="rounded-xl px-4 py-2 bg-white/10 hover:bg-white/20"
+          >
+            Voltar à Home
+          </button>
+        </div>
+
+        {latestReq?.note && (
+          <details className="mt-2">
+            <summary className="cursor-pointer opacity-80 text-sm">
+              Ver resumo da última solicitação
+            </summary>
+            <pre className="mt-2 whitespace-pre-wrap text-sm opacity-80 bg-white/5 rounded-xl p-3">
+              {latestReq.note}
+            </pre>
+          </details>
         )}
-
-        {requestStatus === "pending" && <p className="text-sm">Sua solicitação está pendente de aprovação.</p>}
-        {role !== "user" && <p className="text-sm">Você já pode criar eventos ao vivo.</p>}
-      </div>
+      </section>
     </div>
   );
 }
