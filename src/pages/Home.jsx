@@ -2,8 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabaseClient";
 import { useNavigate } from "react-router-dom";
 
-/* ─── Ícones ────────────────────────────────────────────── */
-function RefreshIcon({ className = "", size = 20 }) {
+/* Ícones mini */
+function RefreshIcon({ className = "", size = 18 }) {
   return (
     <svg
       width={size}
@@ -55,77 +55,90 @@ function Heart({ filled, size = 18, className = "" }) {
   );
 }
 
-/* ─── Card de ocorrência ────────────────────────────────── */
-function OccCard({ occ, onOpen, live, showFav, isFav, onToggleFav }) {
+/* Skeleton */
+function SkeletonCard() {
+  return (
+    <div className="w-full rounded-2xl overflow-hidden bg-white/5 animate-pulse">
+      <div className="h-40 bg-white/10" />
+      <div className="p-4 space-y-2">
+        <div className="h-4 bg-white/10 rounded w-3/4" />
+        <div className="h-3 bg-white/10 rounded w-1/2" />
+        <div className="h-3 bg-white/10 rounded w-2/5" />
+      </div>
+    </div>
+  );
+}
+
+/* Card de ocorrência */
+function OccCard({ occ, onOpen, live, isOwner, isFav, onToggleFav }) {
   const starts = occ.starts_at
     ? new Date(occ.starts_at).toLocaleString("pt-BR")
     : "Sem início";
   const ends = occ.ends_at ? new Date(occ.ends_at).toLocaleTimeString("pt-BR") : null;
 
   return (
-    <div className="w-full rounded-2xl overflow-hidden bg-white/5 hover:bg-white/10 transition">
-      {occ.image_url ? (
-        <img
-          src={occ.image_url}
-          alt=""
-          className="w-full h-40 object-cover cursor-pointer"
-          onClick={() => onOpen(occ)}
-        />
-      ) : (
-        <div
-          className="w-full h-40 grid place-items-center bg-white/5 cursor-pointer"
-          onClick={() => onOpen(occ)}
-        >
-          <span className="text-3xl">🎟️</span>
-        </div>
-      )}
+    <div className="group w-full rounded-2xl overflow-hidden bg-white/[0.06] hover:bg-white/[0.10] transition ring-1 ring-white/10">
+      <div className="relative">
+        {occ.image_url ? (
+          <img
+            src={occ.image_url}
+            alt=""
+            className="w-full h-40 object-cover cursor-pointer"
+            onClick={() => onOpen(occ)}
+            loading="lazy"
+          />
+        ) : (
+          <div
+            className="w-full h-40 grid place-items-center text-3xl bg-gradient-to-br from-white/10 to-white/5 cursor-pointer"
+            onClick={() => onOpen(occ)}
+          >
+            🎟️
+          </div>
+        )}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/10 to-transparent pointer-events-none" />
+        {live && (
+          <span className="absolute top-3 left-3 text-[11px] font-medium px-2 py-1 rounded-full bg-red-600/80 text-white shadow">
+            AO VIVO
+          </span>
+        )}
 
-      <div className="p-4 flex items-start justify-between gap-3">
-        <button className="min-w-0 text-left" onClick={() => onOpen(occ)}>
-          <p className="font-semibold truncate">{occ.title}</p>
-          <p className="text-sm opacity-80 truncate">{occ.venue || "Sem local"}</p>
-          <p className="text-xs opacity-60 mt-1">
-            {starts}
-            {ends ? ` — ${ends}` : ""}
-          </p>
-        </button>
-
-        <div className="flex flex-col items-end gap-2">
-          {live && (
-            <span className="text-xs px-2 py-1 rounded-full bg-red-700/30 text-red-300">
-              AO VIVO
-            </span>
-          )}
-
-          {showFav && (
-            <button
-              title={isFav ? "Remover dos favoritos" : "Adicionar aos favoritos"}
-              aria-label="Favorito"
-              onClick={(e) => {
-                e.stopPropagation();
-                onToggleFav(occ.event_id, isFav);
-              }}
-              className={`p-2 rounded-full bg-white/10 hover:bg-white/20 transition ${
-                isFav ? "text-pink-400" : "text-white/70 hover:text-white"
-              }`}
-            >
-              <Heart filled={isFav} />
-            </button>
-          )}
-        </div>
+        {/* Coração (somente para usuária comum) */}
+        {!isOwner && (
+          <button
+            title={isFav ? "Remover dos favoritos" : "Adicionar aos favoritos"}
+            aria-label="Favorito"
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleFav(occ.event_id, isFav);
+            }}
+            className={`absolute top-3 right-3 p-2 rounded-full backdrop-blur bg-black/30 hover:bg-black/50 transition ${
+              isFav ? "text-pink-400" : "text-white/80 hover:text-white"
+            }`}
+          >
+            <Heart filled={isFav} />
+          </button>
+        )}
       </div>
+
+      <button className="p-4 block w-full text-left" onClick={() => onOpen(occ)}>
+        <p className="font-semibold truncate">{occ.title}</p>
+        <p className="text-sm opacity-80 truncate">{occ.venue || "Sem local"}</p>
+        <p className="text-xs opacity-70 mt-1">
+          {starts}
+          {ends ? ` — ${ends}` : ""}
+        </p>
+      </button>
     </div>
   );
 }
 
-/* ─── Constantes de abas ────────────────────────────────── */
-const TABS = [
-  { id: "live", label: "Eventos ao vivo" },
-  { id: "upcoming", label: "Eventos futuros" },
-  { id: "past", label: "Eventos passados" },
+/* Tabs base; “Meus eventos” entra dinamicamente para owner/admin */
+const BASE_TABS = [
+  { id: "live", label: "Ao vivo" },
+  { id: "upcoming", label: "Futuros" },
+  { id: "past", label: "Passados" },
 ];
 
-/* ─── Home ──────────────────────────────────────────────── */
 export default function Home() {
   const nav = useNavigate();
 
@@ -134,27 +147,33 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
 
   // Busca
-  const [query, setQuery] = useState("");
   const [typed, setTyped] = useState("");
+  const [query, setQuery] = useState("");
 
-  // Perfil/usuário
+  // Perfil/role
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState({ display_name: "", role: "user" });
-  const ownerMode = profile.role === "owner" || profile.role === "admin";
-  const canCreate = ownerMode;
+  const isOwner = profile.role === "owner" || profile.role === "admin";
+  const canCreate = isOwner;
 
-  // Favoritos (apenas para usuários não-owner)
+  // Favoritos (apenas user comum)
   const [favSet, setFavSet] = useState(new Set()); // event_id
   const [favEvents, setFavEvents] = useState([]);  // [{id,title,venue,image_url}]
 
-  // Debounce da busca
+  /* Debounce search */
   useEffect(() => {
     const t = setTimeout(() => setQuery(typed.trim()), 300);
     return () => clearTimeout(t);
   }, [typed]);
 
-  // Carregar usuário + perfil + favoritos
+  /* Tabs dinâmicas */
+  const TABS = useMemo(
+    () => (isOwner ? [...BASE_TABS, { id: "mine", label: "Meus eventos" }] : BASE_TABS),
+    [isOwner]
+  );
+
+  /* Perfil + favoritos */
   useEffect(() => {
     (async () => {
       const { data: u } = await supabase.auth.getUser();
@@ -167,27 +186,27 @@ export default function Home() {
           .eq("id", u.user.id)
           .maybeSingle();
         if (prof) setProfile(prof);
+      }
 
-        if (!ownerMode) {
-          await loadFavorites(u.user.id);
-        }
+      if (!isOwner) {
+        await loadFavorites(); // para usuária comum
+      } else {
+        setFavSet(new Set());
+        setFavEvents([]);
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Carregar favoritos (ids + detalhes) — somente usuários comuns
-  async function loadFavorites(uidOverride) {
-    const uid = uidOverride || user?.id;
+  async function loadFavorites() {
+    const { data: u } = await supabase.auth.getUser();
+    const uid = u?.user?.id;
     if (!uid) {
       setFavSet(new Set());
       setFavEvents([]);
       return;
     }
-    const { data } = await supabase
-      .from("favorites")
-      .select("event_id")
-      .eq("user_id", uid);
+    const { data } = await supabase.from("favorites").select("event_id").eq("user_id", uid);
     const ids = (data || []).map((r) => r.event_id);
     setFavSet(new Set(ids));
 
@@ -203,66 +222,49 @@ export default function Home() {
     }
   }
 
-  // Carregar ocorrências (considera ownerMode)
+  /* Carregar lista */
   async function load() {
     setLoading(true);
-    try {
-      const base =
-        tab === "live"
-          ? "v_occ_live"
-          : tab === "upcoming"
-          ? "v_occ_upcoming"
-          : "v_occ_past";
 
-      let q = supabase.from(base).select("*");
+    let base =
+      tab === "live" ? "v_occ_live" : tab === "upcoming" ? "v_occ_upcoming" : "v_occ_past";
 
-      if (tab === "live") q = q.order("starts_at", { ascending: false });
-      else if (tab === "upcoming") q = q.order("starts_at", { ascending: true });
-      else q = q.order("starts_at", { ascending: false });
+    let q = supabase.from(base).select("*");
 
-      // Para proprietários: limitar aos eventos criados por ele
-      if (ownerMode) {
-        const { data: u } = await supabase.auth.getUser();
-        const uid = u?.user?.id;
-        if (uid) {
-          const { data: myEvents } = await supabase
-            .from("events")
-            .select("id")
-            .eq("created_by", uid);
-          const ids = (myEvents || []).map((e) => e.id);
-          if (ids.length === 0) {
-            setRows([]);
-            setLoading(false);
-            return;
-          }
-          q = q.in("event_id", ids);
-        }
-      }
+    if (tab === "live") q = q.order("starts_at", { ascending: false });
+    else if (tab === "upcoming") q = q.order("starts_at", { ascending: true });
+    else if (tab === "past") q = q.order("starts_at", { ascending: false });
 
-      // Busca
-      if (query) {
-        const term = `%${query}%`;
-        q = q.or(`title.ilike.${term},venue.ilike.${term}`);
-      }
-
-      const { data, error } = await q;
-      setRows(error ? [] : data || []);
-    } finally {
-      setLoading(false);
+    // “Meus eventos”
+    if (tab === "mine" && isOwner && user?.id) {
+      q = supabase
+        .from("v_occ_with_event")
+        .select("*")
+        .eq("created_by", user.id)
+        .order("starts_at", { ascending: false });
     }
+
+    if (query) {
+      const term = `%${query}%`;
+      q = q.or(`title.ilike.${term},venue.ilike.${term}`);
+    }
+
+    const { data, error } = await q;
+    setRows(error ? [] : data || []);
+    setLoading(false);
   }
 
-  // Recarrega quando muda aba ou termo de busca
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, query, ownerMode]);
+  }, [tab, query]);
 
-  // Alternar favorito (somente usuários comuns)
+  /* Favoritar (somente user comum) */
   async function toggleFavorite(eventId, isFav) {
     const { data: u } = await supabase.auth.getUser();
     const uid = u?.user?.id;
     if (!uid) return alert("Faça login para usar favoritos.");
+    if (isOwner) return; // owner não usa favoritos
 
     if (isFav) {
       const { error } = await supabase
@@ -277,14 +279,12 @@ export default function Home() {
         setFavEvents((old) => old.filter((e) => e.id !== eventId));
       }
     } else {
-      const { error } = await supabase
-        .from("favorites")
-        .upsert({ user_id: uid, event_id: eventId });
+      const { error } = await supabase.from("favorites").upsert({ user_id: uid, event_id: eventId });
       if (!error) {
         const next = new Set(favSet);
         next.add(eventId);
         setFavSet(next);
-        // add ao painel
+
         const { data: ev } = await supabase
           .from("events")
           .select("id,title,venue,image_url")
@@ -300,21 +300,18 @@ export default function Home() {
     }
   }
 
-  // Abrir ocorrência da lista
+  /* Abrir ocorrência com QS estável */
   function openOccurrence(occ) {
-    const qs = new URLSearchParams({
-      event: occ.event_id,
-      t: occ.starts_at || "",
-    }).toString();
+    const qs = new URLSearchParams({ event: occ.event_id, t: occ.starts_at || "" }).toString();
     nav(`/occ/${occ.id}?${qs}`);
   }
 
-  // Abrir favorito (pega live > próximo > último)
+  /* Abrir favorito: prioriza ao vivo, depois próximo, depois mais recente passado */
   async function openFavoriteEvent(eventId) {
     const tryGet = async (view, asc) => {
       const { data } = await supabase
         .from(view)
-        .select("id, event_id, starts_at")
+        .select("id,event_id,starts_at")
         .eq("event_id", eventId)
         .order("starts_at", { ascending: asc })
         .limit(1)
@@ -332,27 +329,26 @@ export default function Home() {
 
   const tabLabel = useMemo(
     () => TABS.find((t) => t.id === tab)?.label || "",
-    [tab]
+    [tab, TABS]
   );
 
   return (
     <div className="min-h-screen p-6">
       {/* HEADER */}
-      <header className="max-w-4xl mx-auto flex items-center justify-between">
-        <h1 className="text-xl font-bold">Avalia Aí</h1>
-
-        <div className="flex gap-2">
+      <header className="max-w-5xl mx-auto flex items-center justify-between">
+        <h1 className="text-xl font-bold tracking-tight">Avalia Aí</h1>
+        <div className="flex items-center gap-2">
           {canCreate && (
             <button
               onClick={() => nav("/create-event")}
-              className="rounded-full px-3 py-2 bg-white/10 hover:bg-white/20"
+              className="rounded-xl px-3 py-2 bg-white/10 hover:bg-white/20"
             >
               Novo Evento
             </button>
           )}
           <button
             onClick={() => setDrawerOpen(true)}
-            className="rounded-full px-3 py-2 bg-white/10 hover:bg-white/20 flex items-center gap-2"
+            className="rounded-xl px-3 py-2 bg-white/10 hover:bg-white/20 flex items-center gap-2"
             title="Perfil"
           >
             <span>👤</span>
@@ -361,107 +357,97 @@ export default function Home() {
         </div>
       </header>
 
-      {/* MAIN */}
-      <main className="max-w-4xl mx-auto mt-6 space-y-4">
-        {/* Top bar (filtros) */}
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-          <div className="relative inline-block">
-            <label htmlFor="tabSelect" className="text-sm opacity-80 mr-2">
-              Filtrar por:
-            </label>
-            <div className="relative inline-block">
-              <select
-                id="tabSelect"
-                value={tab}
-                onChange={(e) => setTab(e.target.value)}
-                className="appearance-none rounded-xl bg-neutral-800/80 text-white px-3 py-2 pr-8 border border-white/10 focus:outline-none focus:ring-2 focus:ring-white/20"
-              >
-                <option value="live">Eventos ao vivo</option>
-                <option value="upcoming">Eventos futuros</option>
-                <option value="past">Eventos passados</option>
-              </select>
-              <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 opacity-70">
-                ▾
-              </span>
-            </div>
-          </div>
-
-          {/* Busca */}
-          <div className="relative w-full sm:max-w-xs">
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 opacity-70">
-              <SearchIcon />
-            </span>
-            <input
-              type="text"
-              value={typed}
-              onChange={(e) => setTyped(e.target.value)}
-              placeholder="Pesquisar por título ou local"
-              className="w-full rounded-xl bg-white/10 pl-10 pr-9 py-2 focus:outline-none focus:ring-2 focus:ring-white/20"
-            />
-            {typed && (
-              <button
-                onClick={() => setTyped("")}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-sm opacity-70 hover:opacity-100"
-                title="Limpar"
-                aria-label="Limpar pesquisa"
-              >
-                ✕
-              </button>
-            )}
-          </div>
-
-          {/* Atualizar */}
+      {/* CONTROLES SUPERIORES */}
+      <section className="max-w-5xl mx-auto mt-6 space-y-3">
+        {/* Chips de filtro */}
+        <div className="flex flex-wrap gap-2">
+          {TABS.map((t) => (
+            <button
+              key={t.id}
+              onClick={() => setTab(t.id)}
+              className={`px-3 py-1.5 rounded-full text-sm border ${
+                tab === t.id
+                  ? "bg-white text-black border-transparent"
+                  : "bg-white/10 border-white/10 hover:bg-white/15"
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
           <button
             onClick={async () => {
-              if (!ownerMode) await loadFavorites();
+              if (!isOwner) await loadFavorites();
               await load();
             }}
             title="Atualizar"
             aria-label="Atualizar"
-            className="rounded-full p-2 bg-white/10 hover:bg-white/20 transition ml-auto sm:ml-0"
+            className="ml-auto rounded-full p-2 bg-white/10 hover:bg-white/20 transition"
           >
             <RefreshIcon className={loading ? "animate-spin" : ""} />
           </button>
         </div>
 
-        <h2 className="text-lg font-semibold">
-          {ownerMode ? `Meus ${tabLabel.toLowerCase()}` : tabLabel}
-        </h2>
+        {/* Busca */}
+        <div className="relative w-full sm:max-w-md">
+          <span className="absolute left-3 top-1/2 -translate-y-1/2 opacity-70">
+            <SearchIcon />
+          </span>
+          <input
+            type="text"
+            value={typed}
+            onChange={(e) => setTyped(e.target.value)}
+            placeholder="Pesquisar por título ou local"
+            className="w-full rounded-xl bg-white/10 pl-10 pr-10 py-2 focus:outline-none focus:ring-2 focus:ring-white/20"
+          />
+          {typed && (
+            <button
+              onClick={() => setTyped("")}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-sm opacity-70 hover:opacity-100"
+              title="Limpar"
+              aria-label="Limpar pesquisa"
+            >
+              ✕
+            </button>
+          )}
+        </div>
+      </section>
 
-        {loading && <p>Carregando…</p>}
-        {!loading && rows.length === 0 && (
-          <p className="opacity-80">
+      {/* GRID */}
+      <main className="max-w-5xl mx-auto mt-4">
+        {loading ? (
+          <div className="grid gap-3 md:grid-cols-3">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <SkeletonCard key={i} />
+            ))}
+          </div>
+        ) : rows.length === 0 ? (
+          <p className="opacity-80 mt-6">
             {tab === "live"
-              ? ownerMode
-                ? "Você não tem eventos ao vivo agora."
-                : "Nenhuma ocorrência ao vivo no momento."
+              ? "Nenhuma ocorrência ao vivo no momento."
               : tab === "upcoming"
-              ? ownerMode
-                ? "Você não tem eventos futuros."
-                : "Sem ocorrências futuras."
-              : ownerMode
-              ? "Você ainda não tem eventos passados."
+              ? "Sem ocorrências futuras."
+              : tab === "mine"
+              ? "Você ainda não tem ocorrências dos seus eventos."
               : "Sem ocorrências passadas."}
           </p>
+        ) : (
+          <div className="grid gap-3 md:grid-cols-3">
+            {rows.map((occ) => {
+              const isFav = !isOwner && favSet.has(occ.event_id);
+              return (
+                <OccCard
+                  key={occ.id}
+                  occ={occ}
+                  live={tab === "live"}
+                  isOwner={isOwner}
+                  isFav={isFav}
+                  onToggleFav={toggleFavorite}
+                  onOpen={openOccurrence}
+                />
+              );
+            })}
+          </div>
         )}
-
-        {/* Grid de cards */}
-        <div className="grid gap-3 md:grid-cols-2">
-          {rows.map((occ) => {
-            const isFav = !ownerMode && favSet.has(occ.event_id);
-            return (
-              <OccCard
-                key={occ.id}
-                occ={occ}
-                live={tab === "live"}
-                showFav={!ownerMode}
-                isFav={isFav}
-                onToggleFav={toggleFavorite}
-                onOpen={openOccurrence}
-              />
-            );
-          })}
-        </div>
       </main>
 
       {/* DRAWER PERFIL */}
@@ -501,78 +487,50 @@ export default function Home() {
               </p>
             </div>
 
-            {/* Proprietário: atalhos */}
-            {ownerMode ? (
-              <div className="space-y-2">
-                <button
-                  onClick={() => {
-                    setDrawerOpen(false);
-                    nav("/create-event");
-                  }}
-                  className="w-full text-left rounded-xl px-3 py-3 bg-white/10 hover:bg-white/20 flex items-center gap-2"
-                >
-                  ➕ Criar novo evento
-                </button>
-                <button
-                  onClick={() => {
-                    setDrawerOpen(false);
-                    nav("/owner"); // sua rota de painel (se existir)
-                  }}
-                  className="w-full text-left rounded-xl px-3 py-3 bg-white/10 hover:bg-white/20 flex items-center gap-2"
-                >
-                  📊 Painel do Proprietário
-                </button>
-              </div>
-            ) : (
-              /* Usuário comum: Favoritos */
+            {/* Favoritos — só para usuária comum */}
+            {!isOwner && (
               <div className="mb-6">
                 <h4 className="font-semibold mb-3">Favoritos</h4>
-                {favEvents.length === 0 && (
+                {favEvents.length === 0 ? (
                   <p className="text-sm opacity-70">Nenhum evento favorito ainda.</p>
-                )}
-                <div className="space-y-2">
-                  {favEvents.map((ev) => (
-                    <div
-                      key={ev.id}
-                      className="rounded-xl p-3 bg-white/5 flex items-center gap-3"
-                    >
-                      {ev.image_url ? (
-                        <img
-                          src={ev.image_url}
-                          alt=""
-                          className="w-12 h-12 rounded-lg object-cover"
-                        />
-                      ) : (
-                        <div className="w-12 h-12 rounded-lg bg-white/10 grid place-items-center text-sm">
-                          🎟️
+                ) : (
+                  <div className="space-y-2">
+                    {favEvents.map((ev) => (
+                      <div key={ev.id} className="rounded-xl p-3 bg-white/5 flex items-center gap-3">
+                        {ev.image_url ? (
+                          <img src={ev.image_url} alt="" className="w-12 h-12 rounded-lg object-cover" />
+                        ) : (
+                          <div className="w-12 h-12 rounded-lg bg-white/10 grid place-items-center text-sm">
+                            🎟️
+                          </div>
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <p className="font-medium truncate">{ev.title}</p>
+                          <p className="text-xs opacity-70 truncate">{ev.venue || "—"}</p>
                         </div>
-                      )}
-                      <div className="min-w-0 flex-1">
-                        <p className="font-medium truncate">{ev.title}</p>
-                        <p className="text-xs opacity-70 truncate">{ev.venue || "—"}</p>
+
+                        <button
+                          onClick={() => openFavoriteEvent(ev.id)}
+                          className="rounded-full px-3 py-2 bg-white/10 hover:bg-white/20 text-sm"
+                        >
+                          Abrir
+                        </button>
+                        <button
+                          onClick={() => toggleFavorite(ev.id, true)}
+                          className="rounded-full p-2 bg-white/10 hover:bg-white/20 text-pink-400"
+                          title="Remover dos favoritos"
+                          aria-label="Remover dos favoritos"
+                        >
+                          <Heart filled />
+                        </button>
                       </div>
-                      <button
-                        onClick={() => openFavoriteEvent(ev.id)}
-                        className="rounded-full px-3 py-2 bg-white/10 hover:bg-white/20 text-sm"
-                      >
-                        Abrir
-                      </button>
-                      <button
-                        onClick={() => toggleFavorite(ev.id, true)}
-                        className="rounded-full p-2 bg-white/10 hover:bg-white/20 text-pink-400"
-                        title="Remover dos favoritos"
-                        aria-label="Remover dos favoritos"
-                      >
-                        <Heart filled />
-                      </button>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 
-            {/* Ações de conta */}
-            <div className="space-y-2 mt-6">
+            <div className="space-y-2">
               <button
                 onClick={() => {
                   setDrawerOpen(false);
@@ -592,6 +550,18 @@ export default function Home() {
                   className="w-full text-left rounded-xl px-3 py-3 bg-white/10 hover:bg-white/20 flex items-center gap-2"
                 >
                   🛡️ Área do Admin
+                </button>
+              )}
+
+              {isOwner && (
+                <button
+                  onClick={() => {
+                    setDrawerOpen(false);
+                    nav("/create-event");
+                  }}
+                  className="w-full text-left rounded-xl px-3 py-3 bg-white/10 hover:bg-white/20 flex items-center gap-2"
+                >
+                  ➕ Criar novo evento
                 </button>
               )}
 

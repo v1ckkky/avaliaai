@@ -114,7 +114,7 @@ export default function OwnerDashboard() {
       <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
         <StatCard label="Eventos" value={events.length} />
         <StatCard label="Ocorrências (total)" value={totals.occ} />
-        <StatCard label="👍 Upvotes" value={totals.up} />
+        <StatCard label="👍 Votos positivos" value={totals.up} />
         <StatCard label="Média geral" value={totals.avg.toFixed(2)} hint="Todas as notas" />
       </div>
 

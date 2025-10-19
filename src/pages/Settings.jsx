@@ -33,6 +33,11 @@ export default function Settings() {
   // estado da última solicitação
   const [latestReq, setLatestReq] = useState(null); // {id,status,created_at,note}
 
+  // Danger Zone – excluir conta
+  const [confirmText, setConfirmText] = useState("");
+  const [deleting, setDeleting] = useState(false);
+  const confirmPhrase = "EXCLUIR";
+
   useEffect(() => {
     (async () => {
       setLoading(true);
@@ -177,6 +182,53 @@ export default function Settings() {
       flashErr(e.message || String(e));
     }
   }
+
+  // ========== DANGER ZONE: excluir conta ==========
+  async function hardDeleteViaEdge() {
+    const token = (await supabase.auth.getSession())?.data?.session?.access_token;
+    const res = await fetch("/functions/v1/delete-user", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    if (!res.ok) {
+      const msg = await res.text();
+      throw new Error(msg || "Falha ao chamar função de exclusão.");
+    }
+  }
+
+  async function softDeleteViaRPC(uid) {
+    const { error } = await supabase.rpc("purge_user_data", { p_user_id: uid });
+    if (error) throw new Error(error.message);
+  }
+
+  async function handleDeleteAccount() {
+    try {
+      if (!user?.id) throw new Error("Faça login.");
+      if (confirmText !== confirmPhrase) {
+        throw new Error(`Digite exatamente ${confirmPhrase} para confirmar.`);
+      }
+      setDeleting(true);
+
+      // 1) tenta apagar dados + auth pela Edge Function
+      try {
+        await hardDeleteViaEdge();
+      } catch {
+        // 2) fallback: apaga somente dados no Postgres e mantém auth
+        await softDeleteViaRPC(user.id);
+      }
+
+      await supabase.auth.signOut();
+      alert("Conta excluída. Sentiremos sua falta!");
+      nav("/", { replace: true });
+    } catch (e) {
+      flashErr(e.message || String(e));
+    } finally {
+      setDeleting(false);
+    }
+  }
+  // ================================================
 
   if (loading) return <div className="p-6">Carregando…</div>;
 
@@ -378,6 +430,32 @@ export default function Settings() {
             </pre>
           </details>
         )}
+      </section>
+
+      {/* DANGER ZONE – Excluir conta */}
+      <section className="rounded-2xl p-5 border border-red-700/40 bg-red-900/20 space-y-3">
+        <h2 className="font-semibold text-red-300">Excluir conta</h2>
+        <p className="text-sm opacity-90">
+          Esta ação é permanente. Seus eventos, ocorrências, votos, avaliações, favoritos
+          e pedidos de proprietário serão removidos. Para confirmar, digite{" "}
+          <b>{confirmPhrase}</b> abaixo.
+        </p>
+
+        <div className="flex items-center gap-2">
+          <input
+            value={confirmText}
+            onChange={(e) => setConfirmText(e.target.value)}
+            placeholder={confirmPhrase}
+            className="rounded-xl px-3 py-2 bg-white/10 w-40"
+          />
+          <button
+            disabled={deleting || confirmText !== confirmPhrase}
+            onClick={handleDeleteAccount}
+            className="rounded-xl px-3 py-2 bg-red-600/80 hover:bg-red-600 disabled:opacity-50"
+          >
+            {deleting ? "Excluindo…" : "Excluir minha conta"}
+          </button>
+        </div>
       </section>
     </div>
   );
