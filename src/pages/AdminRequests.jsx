@@ -63,11 +63,11 @@ export default function AdminRequests() {
 
       const { error } = await supabase
         .from("owner_requests")
-        .update({ status: "rejected", reviewed_at: new Date().toISOString() })
+        .update({ status: "reproved", reviewed_at: new Date().toISOString() })
         .eq("id", req.id);
       if (error) throw error;
 
-      setMsg("Solicitação rejeitada.");
+      setMsg("Solicitação reprovado.");
       await load();
     } catch (e) {
       setErr(e.message || String(e));
@@ -112,7 +112,7 @@ export default function AdminRequests() {
                   className="rounded-full px-3 py-2 bg-red-600/80 hover:bg-red-600 disabled:opacity-50"
                   disabled={disabled}
                 >
-                  {busyId === r.id ? "Rejeitando..." : "Rejeitar"}
+                  {busyId === r.id ? "Reprovando..." : "Reprovar"}
                 </button>
               </div>
             </div>
