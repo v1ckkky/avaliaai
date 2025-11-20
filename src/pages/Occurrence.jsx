@@ -19,7 +19,7 @@ function isLiveNow(startsAt, endsAt) {
 }
 
 export default function Occurrence() {
-  const { id } = useParams(); // occurrence_id (pode estar desatualizado)
+  const { id } = useParams(); // occurrence_id
   const location = useLocation();
   const nav = useNavigate();
 
@@ -30,15 +30,21 @@ export default function Occurrence() {
   const [votes, setVotes] = useState({ up: 0, down: 0 });
   const [avg, setAvg] = useState({ dj: 0, fila: 0, preco: 0, seguranca: 0 });
 
+  const [selectedVote, setSelectedVote] = useState(null);
+  const [selectedScores, setSelectedScores] = useState({
+    dj: null,
+    fila: null,
+    preco: null,
+    seguranca: null,
+  });
+
   const [userId, setUserId] = useState(null);
   const [role, setRole] = useState("user");
   const [canEdit, setCanEdit] = useState(false);
 
-  // ------- loads -------
   async function loadOccurrence() {
     setLoading(true);
 
-    // 1️⃣ tenta carregar pela ID
     const { data, error } = await supabase
       .from("v_occ_with_event")
       .select("*")
@@ -48,7 +54,6 @@ export default function Occurrence() {
     let row = data || null;
     if (error) console.error(error);
 
-    // 2️⃣ fallback por (event_id, starts_at)
     if (!row) {
       const qs = new URLSearchParams(location.search);
       const eventId = qs.get("event");
@@ -61,7 +66,6 @@ export default function Occurrence() {
           .eq("event_id", eventId)
           .order("starts_at", { ascending: true });
 
-        // procura a ocorrência mais próxima do horário
         if (occs?.length) {
           const base = new Date(t);
           const nearest = occs.reduce((a, b) => {
@@ -74,13 +78,11 @@ export default function Occurrence() {
       }
     }
 
-    // 3️⃣ se mesmo assim não achou, volta pra home
     if (!row) {
       nav("/home", { replace: true });
       return;
     }
 
-    // seta dados e atualiza URL se o ID estiver desatualizado
     setOcc(row);
     setLive(isLiveNow(row.starts_at, row.ends_at));
 
@@ -123,6 +125,38 @@ export default function Occurrence() {
     });
   }
 
+  // novo: carregar voto e notas da usuária
+  async function loadUserSelections(uid) {
+    if (!uid) return;
+
+    const { data: vData } = await supabase
+      .from("votes")
+      .select("upvote")
+      .eq("occurrence_id", id)
+      .eq("user_id", uid)
+      .maybeSingle();
+
+    if (vData) {
+      setSelectedVote(vData.upvote ? "up" : "down");
+    }
+
+    const { data: rData } = await supabase
+      .from("ratings")
+      .select("key, score")
+      .eq("occurrence_id", id)
+      .eq("user_id", uid);
+
+    if (rData && rData.length) {
+      const base = { dj: null, fila: null, preco: null, seguranca: null };
+      rData.forEach((r) => {
+        if (base.hasOwnProperty(r.key)) {
+          base[r.key] = Number(r.score);
+        }
+      });
+      setSelectedScores((prev) => ({ ...prev, ...base }));
+    }
+  }
+
   async function sendVote(up) {
     if (!live) return alert("Esta ocorrência não está aberta para votos.");
     const { data: u } = await supabase.auth.getUser();
@@ -136,6 +170,7 @@ export default function Occurrence() {
         { onConflict: "occurrence_id,user_id" }
       );
     if (error) return alert(error.message);
+    setSelectedVote(up ? "up" : "down");
     loadVotes();
   }
 
@@ -152,6 +187,10 @@ export default function Occurrence() {
         { onConflict: "occurrence_id,user_id,key" }
       );
     if (error) return alert(error.message);
+    setSelectedScores((prev) => ({
+      ...prev,
+      [key]: score,
+    }));
     loadRatings();
   }
 
@@ -185,6 +224,7 @@ export default function Occurrence() {
       await loadOccurrence();
       await loadVotes();
       await loadRatings();
+      if (uid) await loadUserSelections(uid); // pré-marca aqui também
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, location.search]);
@@ -201,11 +241,15 @@ export default function Occurrence() {
     })();
   }, [occ, userId, role]);
 
-  if (loading) return null; // remove o “Carregando…” também!
+  if (loading) return null;
 
   const when =
-    (occ.starts_at ? new Date(occ.starts_at).toLocaleString("pt-BR") : "Sem início") +
-    (occ.ends_at ? ` — ${new Date(occ.ends_at).toLocaleTimeString("pt-BR")}` : "");
+    (occ.starts_at
+      ? new Date(occ.starts_at).toLocaleString("pt-BR")
+      : "Sem início") +
+    (occ.ends_at
+      ? ` — ${new Date(occ.ends_at).toLocaleTimeString("pt-BR")}`
+      : "");
 
   return (
     <div className="min-h-screen p-6 max-w-4xl mx-auto space-y-4">
@@ -243,6 +287,9 @@ export default function Occurrence() {
             <h1 className="text-2xl font-bold">{occ.title}</h1>
             <p className="opacity-80">{occ.venue || "Sem local"}</p>
             <p className="text-xs opacity-70 mt-1">{when}</p>
+            {occ.description && (
+              <p className="text-sm opacity-80 mt-1">{occ.description}</p>
+            )}
           </div>
           {live && (
             <span className="text-xs px-2 py-1 rounded-full bg-red-700/30 text-red-300">
@@ -262,14 +309,22 @@ export default function Occurrence() {
         <div className="mt-2 flex gap-2">
           <button
             disabled={!live}
-            className="rounded-xl px-4 py-2 bg-white/10 hover:bg-white/20 disabled:opacity-40 disabled:cursor-not-allowed"
+            className={`rounded-xl px-4 py-2 disabled:opacity-40 disabled:cursor-not-allowed ${
+              selectedVote === "up"
+                ? "bg-red-600 text-white"
+                : "bg-white/10 hover:bg-white/20"
+            }`}
             onClick={() => sendVote(true)}
           >
             👍 Bom
           </button>
           <button
             disabled={!live}
-            className="rounded-xl px-4 py-2 bg-white/10 hover:bg-white/20 disabled:opacity-40 disabled:cursor-not-allowed"
+            className={`rounded-xl px-4 py-2 disabled:opacity-40 disabled:cursor-not-allowed ${
+              selectedVote === "down"
+                ? "bg-red-600 text-white"
+                : "bg-white/10 hover:bg-white/20"
+            }`}
             onClick={() => sendVote(false)}
           >
             👎 Ruim
@@ -288,7 +343,7 @@ export default function Occurrence() {
           <div className="grid md:grid-cols-2 gap-3">
             {["dj", "fila", "preco", "seguranca"].map((k) => (
               <div key={k} className="rounded-2xl p-4 bg-white/5">
-                <p className="font-semibold capitalize">{k}</p>
+                <p className="font-semibold.capitalize">{k}</p>
                 <p className="text-sm opacity-80">
                   Média: {avg[k] ? avg[k].toFixed(1) : "0.0"}
                 </p>
@@ -297,7 +352,11 @@ export default function Occurrence() {
                     <button
                       key={s}
                       disabled={!live}
-                      className="rounded-xl px-3 py-2 bg-white/10 hover:bg-white/20 disabled:opacity-40 disabled:cursor-not-allowed"
+                      className={`rounded-xl px-3 py-2 disabled:opacity-40 disabled:cursor-not-allowed ${
+                        selectedScores[k] === s
+                          ? "bg-red-600 text-white"
+                          : "bg-white/10 hover:bg-white/20"
+                      }`}
                       onClick={() => sendRating(k, s)}
                     >
                       {s}★

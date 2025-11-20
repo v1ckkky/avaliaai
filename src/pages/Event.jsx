@@ -12,22 +12,28 @@ function Stat({ label, value }) {
 }
 
 export default function EventRoom() {
-  const { id } = useParams(); // agora este id é occurrence_id
+  const { id } = useParams(); // occurrence_id
   const nav = useNavigate();
 
-  const [occ, setOcc] = useState(null); // ocorrência + evento
+  const [occ, setOcc] = useState(null);
   const [votes, setVotes] = useState({ up: 0, down: 0 });
   const [avg, setAvg] = useState({ dj: 0, fila: 0, preco: 0, seguranca: 0 });
+
+  const [selectedVote, setSelectedVote] = useState(null); // "up" | "down" | null
+  const [selectedScores, setSelectedScores] = useState({
+    dj: null,
+    fila: null,
+    preco: null,
+    seguranca: null,
+  });
 
   const [userId, setUserId] = useState(null);
   const [role, setRole] = useState("user");
   const canDelete = !!occ && (userId === occ?.created_by || role === "admin");
   const canEdit = canDelete;
 
-  // evento está “aberto” (ao vivo)
   const [isLive, setIsLive] = useState(false);
 
-  // -------- Loads principais --------
   async function loadOccurrence() {
     const { data, error } = await supabase
       .from("v_occ_with_event")
@@ -40,9 +46,7 @@ export default function EventRoom() {
       const now = new Date();
       const starts = data.starts_at ? new Date(data.starts_at) : null;
       const ends = data.ends_at ? new Date(data.ends_at) : null;
-      setIsLive(
-        starts && ends ? now >= starts && now <= ends : true
-      );
+      setIsLive(starts && ends ? now >= starts && now <= ends : true);
     }
   }
 
@@ -76,7 +80,40 @@ export default function EventRoom() {
     });
   }
 
-  // -------- Ações --------
+  // novo: carregar voto e notas da usuária
+  async function loadUserSelections(uid) {
+    if (!uid) return;
+
+    // voto bom/ruim
+    const { data: vData } = await supabase
+      .from("votes")
+      .select("upvote")
+      .eq("occurrence_id", id)
+      .eq("user_id", uid)
+      .maybeSingle();
+
+    if (vData) {
+      setSelectedVote(vData.upvote ? "up" : "down");
+    }
+
+    // notas por categoria
+    const { data: rData } = await supabase
+      .from("ratings")
+      .select("key, score")
+      .eq("occurrence_id", id)
+      .eq("user_id", uid);
+
+    if (rData && rData.length) {
+      const base = { dj: null, fila: null, preco: null, seguranca: null };
+      rData.forEach((r) => {
+        if (base.hasOwnProperty(r.key)) {
+          base[r.key] = Number(r.score);
+        }
+      });
+      setSelectedScores((prev) => ({ ...prev, ...base }));
+    }
+  }
+
   async function sendVote(up) {
     if (!isLive) {
       alert("Este evento não está aberto para votos no momento.");
@@ -93,7 +130,10 @@ export default function EventRoom() {
         { onConflict: "occurrence_id,user_id" }
       );
     if (error) alert(error.message);
-    else loadVotes();
+    else {
+      setSelectedVote(up ? "up" : "down");
+      loadVotes();
+    }
   }
 
   async function sendRating(key, score) {
@@ -112,17 +152,25 @@ export default function EventRoom() {
         { onConflict: "occurrence_id,user_id,key" }
       );
     if (error) alert(error.message);
-    else loadRatings();
+    else {
+      setSelectedScores((prev) => ({
+        ...prev,
+        [key]: score,
+      }));
+      loadRatings();
+    }
   }
 
   async function deleteEvent() {
     if (!confirm("Tem certeza que deseja excluir este evento?")) return;
-    const { error } = await supabase.from("events").delete().eq("id", occ.event_id);
+    const { error } = await supabase
+      .from("events")
+      .delete()
+      .eq("id", occ.event_id);
     if (error) alert(error.message);
     else nav("/home", { replace: true });
   }
 
-  // -------- Inicialização --------
   useEffect(() => {
     (async () => {
       const { data: u } = await supabase.auth.getUser();
@@ -141,10 +189,10 @@ export default function EventRoom() {
       await loadOccurrence();
       await loadVotes();
       await loadRatings();
+      if (uid) await loadUserSelections(uid); // aqui que ele pré-marca
     })();
   }, [id]);
 
-  // Realtime (para votos e notas)
   useEffect(() => {
     const channel = supabase
       .channel(`occ-room-${id}`)
@@ -203,6 +251,9 @@ export default function EventRoom() {
           <div>
             <h1 className="text-2xl font-bold">{occ.title}</h1>
             <p className="opacity-80">{occ.venue || "Sem local"}</p>
+            {occ.description && (
+              <p className="text-sm opacity-80 mt-1">{occ.description}</p>
+            )}
           </div>
           {isLive && (
             <span className="text-xs px-2 py-1 rounded-full bg-red-700/30 text-red-300">
@@ -222,14 +273,22 @@ export default function EventRoom() {
         <div className="mt-2 flex gap-2">
           <button
             disabled={!isLive}
-            className="rounded-xl px-4 py-2 bg-white/10 hover:bg-white/20 disabled:opacity-40 disabled:cursor-not-allowed"
+            className={`rounded-xl px-4 py-2 disabled:opacity-40 disabled:cursor-not-allowed ${
+              selectedVote === "up"
+                ? "bg-red-600 text-white"
+                : "bg-white/10 hover:bg-white/20"
+            }`}
             onClick={() => sendVote(true)}
           >
             👍 Bom
           </button>
           <button
             disabled={!isLive}
-            className="rounded-xl px-4 py-2 bg-white/10 hover:bg-white/20 disabled:opacity-40 disabled:cursor-not-allowed"
+            className={`rounded-xl px-4 py-2 disabled:opacity-40 disabled:cursor-not-allowed ${
+              selectedVote === "down"
+                ? "bg-red-600 text-white"
+                : "bg-white/10 hover:bg-white/20"
+            }`}
             onClick={() => sendVote(false)}
           >
             👎 Ruim
@@ -257,7 +316,11 @@ export default function EventRoom() {
                     <button
                       key={s}
                       disabled={!isLive}
-                      className="rounded-xl px-3 py-2 bg-white/10 hover:bg-white/20 disabled:opacity-40 disabled:cursor-not-allowed"
+                      className={`rounded-xl px-3 py-2 disabled:opacity-40 disabled:cursor-not-allowed ${
+                        selectedScores[k] === s
+                          ? "bg-red-600 text-white"
+                          : "bg-white/10 hover:bg-white/20"
+                      }`}
                       onClick={() => sendRating(k, s)}
                     >
                       {s}★

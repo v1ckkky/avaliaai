@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Avalia Ai</string>
+    <string name="title_activity_main">Avalia Ai</string>
+    <string name="package_name">com.seuorg.avaliaai</string>
+    <string name="custom_url_scheme">com.seuorg.avaliaai</string>
+</resources>

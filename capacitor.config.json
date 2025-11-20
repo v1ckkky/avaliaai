@@ -1,0 +1,7 @@
+{
+  "appId": "com.seuorg.avaliaai",
+  "appName": "Avalia Ai",
+  "webDir": "dist",
+  "bundledWebRuntime": false,
+  "server": { "androidScheme": "https" }
+}
