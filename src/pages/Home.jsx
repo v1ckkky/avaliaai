@@ -233,8 +233,11 @@ export default function Home() {
 
     if (tab === "live") q = q.order("starts_at", { ascending: false });
     else if (tab === "upcoming") q = q.order("starts_at", { ascending: true });
-    else if (tab === "past") q = q.order("starts_at", { ascending: false });
-
+else if (tab === "past") {
+  q = q
+    .lt("ends_at", new Date().toISOString()) // garante só eventos que já terminaram
+    .order("starts_at", { ascending: false });
+}
     // “Meus eventos”
     if (tab === "mine" && isOwner && user?.id) {
       q = supabase
